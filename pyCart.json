@@ -6,12 +6,12 @@
 	// Iteration control and command-line inputs
 	"RunControl": {
         // Run sequence
-        "PhaseSequece": [0],
+        "PhaseSequence": [0],
         "PhaseIters": [700],
         // System configuration
-	    "nProc": 4,
-        "MPI": 0,
-        "Adaptive": 1,
+	    "nProc": 64,
+        "MPI": false,
+        "Adaptive": true,
 	    // Options for ``flowCart``
 	    "flowCart": {
             "it_fc": 200,
@@ -39,7 +39,7 @@
             //number of adaptation cycles
             "n_adapt_cycles": [3],
             // Create initial mesh?
-            "jumpstart": 0,
+            "jumpstart": false,
             // Number of flowCart iters on each new mesh
             "ws_it": [100, 200, 200],
             // Growth in the number of cells
@@ -209,7 +209,7 @@
             "L1": {
                 "Type": "PlotL1",
                 "FigWidth": 5.5,
-                "FigHeight": 6,
+                "FigHeight": 6.0,
                 "Width": 0.33,
                 "Caption": "$L_1$ Density Residual"
             },
@@ -302,8 +302,10 @@
                 "Type": "rotation",
                 "Value": "float",
                 "Group": false,
-                "Center": [8.0, 0.0, 0.0],
-                "Axis":   [0.0, 1.0, 0.0],
+                "Vector": [
+                    [8.0, 0.0, 0.0],
+                    [8.0, 1.0, 0.0]
+                ],
                 "CompID": [
                     "engine_mount",
                     "noz_exterior",
