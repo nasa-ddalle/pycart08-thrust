@@ -3,154 +3,152 @@ $!VarSet |LFDSFN1| = '"Components.i.plt"'
 $!VarSet |LFDSVL1| = '"x" "y" "z" "Cp" "Rho" "U" "V" "W" "Pressure"'
 $!VarSet |LFDSFN2| = '"cutPlanes.plt"'
 $!VarSet |LFDSVL2| = '"x" "y" "z" "Cp" "Rho" "U" "V" "W" "Pressure"'
-$!SETSTYLEBASE FACTORY
-$!CREATECOLORMAP 
-  NAME = 'Diverging - Blue/Red modified (1)'
-  NUMCONTROLPOINTS = 3
-  CONTROLPOINT 1
+$!SetStyleBase Factory
+$!CreateColorMap 
+  Name = 'Diverging - Blue/Red modified (1)'
+  NumControlPoints = 3
+  ControlPoint 1
     {
-    COLORMAPFRACTION = 0
-    LEADRGB
+    ColorMapFraction = 0
+    LeadRGB
       {
-      R = 33
-      G = 102
-      B = 172
-      }
-    TRAILRGB
-      {
-      R = 33
-      G = 102
-      B = 172
-      }
-    }
-  CONTROLPOINT 2
-    {
-    COLORMAPFRACTION = 0.3248
-    LEADRGB
-      {
-      R = 247
-      G = 247
-      B = 247
-      }
-    TRAILRGB
-      {
-      R = 247
-      G = 247
-      B = 247
-      }
-    }
-  CONTROLPOINT 3
-    {
-    COLORMAPFRACTION = 1
-    LEADRGB
-      {
-      R = 223
+      R = 0
       G = 0
-      B = 3
+      B = 255
       }
-    TRAILRGB
+    TrailRGB
       {
-      R = 223
+      R = 0
       G = 0
-      B = 3
-      }
-    }
-$!CREATECOLORMAP 
-  NAME = 'Diverging - Orange/Purple modified (1)'
-  NUMCONTROLPOINTS = 4
-  CONTROLPOINT 1
-    {
-    COLORMAPFRACTION = 0
-    LEADRGB
-      {
-      R = 70
-      G = 0
-      B = 212
-      }
-    TRAILRGB
-      {
-      R = 70
-      G = 0
-      B = 212
-      }
-    }
-  CONTROLPOINT 2
-    {
-    COLORMAPFRACTION = 0.2542
-    LEADRGB
-      {
-      R = 14
-      G = 129
-      B = 51
-      }
-    TRAILRGB
-      {
-      R = 172
-      G = 146
       B = 255
       }
     }
-  CONTROLPOINT 3
+  ControlPoint 2
     {
-    COLORMAPFRACTION = 0.3921
-    LEADRGB
-      {
-      R = 247
-      G = 247
-      B = 247
-      }
-    TRAILRGB
-      {
-      R = 247
-      G = 247
-      B = 247
-      }
-    }
-  CONTROLPOINT 4
-    {
-    COLORMAPFRACTION = 1
-    LEADRGB
+    ColorMapFraction = 0.25
+    LeadRGB
       {
       R = 255
-      G = 136
-      B = 16
+      G = 255
+      B = 255
       }
-    TRAILRGB
+    TrailRGB
       {
       R = 255
-      G = 136
-      B = 16
+      G = 255
+      B = 255
       }
     }
-$!PLOTOPTIONS 
-  SUBDIVIDEALLCELLS = NO
-$!GLOBALPAPER 
-  PAPERSIZEINFO
+  ControlPoint 3
     {
-    LETTER
+    ColorMapFraction = 1
+    LeadRGB
       {
-      WIDTH = 8.5
-      HEIGHT = 11
-      LEFTHARDCLIPOFFSET = 0.125
-      RIGHTHARDCLIPOFFSET = 0.125
-      TOPHARDCLIPOFFSET = 0.125
-      BOTTOMHARDCLIPOFFSET = 0.125
+      R = 255
+      G = 0
+      B = 0
+      }
+    TrailRGB
+      {
+      R = 255
+      G = 0
+      B = 0
       }
     }
-$!PAGE 
-  NAME = 'Untitled'
-  PAPERATTRIBUTES
+$!CreateColorMap 
+  Name = 'Diverging - Orange/Purple modified (1)'
+  NumControlPoints = 4
+  ControlPoint 1
     {
-    BACKGROUNDCOLOR = WHITE
-    ISTRANSPARENT = YES
-    ORIENTPORTRAIT = NO
-    SHOWGRID = YES
-    SHOWRULER = NO
-    SHOWPAPER = NO
-    PAPERSIZE = LETTER
-    RULERSPACING = ONEINCH
-    PAPERGRIDSPACING = HALFINCH
-    REGIONINWORKAREA
+    ColorMapFraction = 0
+    LeadRGB
+      {
+      R = 64
+      G = 0
+      B = 64
+      }
+    TrailRGB
+      {
+      R = 64
+      G = 0
+      B = 64
+      }
+    }
+  ControlPoint 2
+    {
+    ColorMapFraction = 0.25
+    LeadRGB
+      {
+      R = 0
+      G = 128
+      B = 0
+      }
+    TrailRGB
+      {
+      R = 181
+      G = 95
+      B = 191
+      }
+    }
+  ControlPoint 3
+    {
+    ColorMapFraction = 0.375
+    LeadRGB
+      {
+      R = 255
+      G = 255
+      B = 255
+      }
+    TrailRGB
+      {
+      R = 255
+      G = 255
+      B = 255
+      }
+    }
+  ControlPoint 4
+    {
+    ColorMapFraction = 1
+    LeadRGB
+      {
+      R = 255
+      G = 140
+      B = 0
+      }
+    TrailRGB
+      {
+      R = 255
+      G = 140
+      B = 0
+      }
+    }
+$!GlobalPaper 
+  PaperSizeInfo
+    {
+    Letter
+      {
+      Width = 8.5
+      Height = 11
+      LeftHardClipOffset = 0.125
+      RightHardClipOffset = 0.125
+      TopHardClipOffset = 0.125
+      BottomHardClipOffset = 0.125
+      }
+    }
+$!Page 
+  Name = 'Untitled'
+  PaperAttributes
+    {
+    BackgroundColor = White
+    IsTransparent = Yes
+    OrientPortrait = No
+    ShowGrid = Yes
+    ShowRuler = No
+    ShowPaper = No
+    PaperSize = Letter
+    RulerSpacing = OneInch
+    PaperGridSpacing = HalfInch
+    RegionInWorkArea
       {
       X1 = 1
       Y1 = 0.25
@@ -159,174 +157,160 @@ $!PAGE
       }
     }
 ### Frame Number 1 ###
-$!READDATASET  '|LFDSFN1|'
-  INITIALPLOTTYPE = CARTESIAN3D
-  INCLUDETEXT = NO
-  INCLUDEGEOM = NO
-  ASSIGNSTRANDIDS = YES
-  VARLOADMODE = BYNAME
-  VARNAMELIST = '|LFDSVL1|'
-$!REMOVEVAR |LFDSVL1|
-$!REMOVEVAR |LFDSFN1|
-$!READDATASET  '|LFDSFN2|'
-  INITIALPLOTTYPE = CARTESIAN3D
-  INCLUDETEXT = NO
-  INCLUDEGEOM = NO
-  READDATAOPTION = APPEND
-  RESETSTYLE = NO
-  ASSIGNSTRANDIDS = YES
-  VARLOADMODE = BYNAME
-  VARNAMELIST = '|LFDSVL2|'
-$!REMOVEVAR |LFDSVL2|
-$!REMOVEVAR |LFDSFN2|
-$!ALTERDATA 
-  EQUATION = '{mach}=sqrt(({u}*{u}+{v}*{v}+{w}*{w})/(1.4*{Pressure}/{Rho}))'
-$!FRAMELAYOUT 
-  SHOWBORDER = NO
-  SHOWHEADER = NO
-  HEADERCOLOR = RED
-  XYPOS
+$!ReadDataSet  '|LFDSFN1|'
+  InitialPlotType = Cartesian3D
+  IncludeText = No
+  IncludeGeom = No
+  AssignStrandIDs = Yes
+  VarLoadMode = ByName
+  VarNameList = '|LFDSVL1|'
+$!RemoveVar |LFDSVL1|
+$!RemoveVar |LFDSFN1|
+$!ReadDataSet  '|LFDSFN2|'
+  InitialPlotType = Cartesian3D
+  IncludeText = No
+  IncludeGeom = No
+  ReadDataOption = Append
+  ResetStyle = No
+  AssignStrandIDs = Yes
+  VarLoadMode = ByName
+  VarNameList = '|LFDSVL2|'
+$!RemoveVar |LFDSVL2|
+$!RemoveVar |LFDSFN2|
+$!AlterData 
+  Equation = '{mach}=sqrt(({u}*{u}+{v}*{v}+{w}*{w})/(1.4*{Pressure}/{Rho}))'
+$!FrameLayout 
+  ShowBorder = No
+  ShowHeader = No
+  HeaderColor = Red
+  XYPos
     {
     X = 1
     Y = 0.25
     }
-  WIDTH = 9
-  HEIGHT = 8
-$!THREEDAXIS 
-  ASPECTRATIOLIMIT = 25
-  BOXASPECTRATIOLIMIT = 25
-$!PLOTTYPE  = CARTESIAN3D
-$!FRAMENAME  = 'Frame 001'
-$!GLOBALTIME 
-  SOLUTIONTIME = 0
-$!ACTIVEFIELDMAPS  =  [1,3]
-$!GLOBALRGB 
-  REDCHANNELVAR = 5
-  GREENCHANNELVAR = 4
-  BLUECHANNELVAR = 4
-  RANGEMIN = 0
-  RANGEMAX = 1
-$!GLOBALCONTOUR  1
-  VAR = 4
-  COLORMAPNAME = 'Diverging - Blue/Red modified (1)'
-  DEFNUMLEVELS = 31
-  LABELS
+  Width = 9
+  Height = 8
+$!ThreeDAxis 
+  AspectRatioLimit = 25
+  BoxAspectRatioLimit = 25
+$!PlotType  = Cartesian3D
+$!FrameName  = 'Frame 001'
+$!GlobalTime 
+  SolutionTime = 0
+$!ActiveFieldMaps  =  [1,4]
+$!GlobalRGB 
+  RedChannelVar = 5
+  GreenChannelVar = 4
+  BlueChannelVar = 4
+  RangeMin = 0
+  RangeMax = 1
+$!GlobalContour  1
+  Var = 4
+  ColorMapName = 'Diverging - Blue/Red modified (1)'
+  DefNumLevels = 17
+  Labels
     {
-    AUTOLEVELSKIP = 2
+    AutoLevelSkip = 2
     }
-  LEGEND
+  Legend
     {
-    SHOW = YES
-    XYPOS
+    Show = Yes
+    XYPos
       {
       X = 1.0269
       Y = 99.161
       }
-    ANCHORALIGNMENT = TOPLEFT
-    ISVERTICAL = NO
-    NUMBERTEXTSHAPE
+    AnchorAlignment = TopLeft
+    IsVertical = No
+    NumberTextShape
       {
-      HEIGHT = 2
+      Height = 2
       }
-    BOX
+    Box
       {
-      BOXTYPE = FILLED
-      COLOR = WHITE
+      BoxType = Filled
+      Color = White
       }
     }
-  COLORCUTOFF
+  ColorCutoff
     {
-    RANGEMIN = 5.5913820502
-    RANGEMAX = 17.6917197757
+    RangeMin = 5.5913820502
+    RangeMax = 17.6917197757
     }
-  COLORMAPFILTER
+  ColorMapFilter
     {
-    CONTINUOUSCOLOR
+    ContinuousColor
       {
-      CMIN = -0.458786812557
-      CMAX = 23.7418886385
+      CMin = -0.458786812557
+      CMax = 23.7418886385
       }
     }
-$!CONTOURLEVELS NEW
-  CONTOURGROUP = 1
-  RAWDATA
-31
--0.5
--0.45
+$!ContourLevels New
+  ContourGroup = 1
+  RawData
+17
 -0.4
--0.35
 -0.3
--0.25
 -0.2
--0.15
 -0.1
--0.05
 0
-0.05
 0.1
-0.15
 0.2
-0.25
 0.3
-0.35
 0.4
-0.45
 0.5
-0.55
 0.6
-0.65
 0.7
-0.75
 0.8
-0.85
 0.9
-0.95
 1
-$!GLOBALCONTOUR  2
-  VAR = 10
-  COLORMAPNAME = 'Diverging - Orange/Purple modified (1)'
-  DEFNUMLEVELS = 41
-  LABELS
+1.1
+1.2
+$!GlobalContour  2
+  Var = 10
+  ColorMapName = 'Diverging - Orange/Purple modified (1)'
+  DefNumLevels = 41
+  Labels
     {
-    AUTOLEVELSKIP = 2
+    AutoLevelSkip = 2
     }
-  LEGEND
+  Legend
     {
-    SHOW = YES
-    XYPOS
+    Show = Yes
+    XYPos
       {
       X = 1.1116
       Y = 7.7407
       }
-    ANCHORALIGNMENT = TOPLEFT
-    ISVERTICAL = NO
-    NUMBERTEXTSHAPE
+    AnchorAlignment = TopLeft
+    IsVertical = No
+    NumberTextShape
       {
-      HEIGHT = 2
+      Height = 2
       }
-    BOX
+    Box
       {
-      BOXTYPE = FILLED
-      COLOR = WHITE
+      BoxType = Filled
+      Color = White
       }
-    LABELINCREMENT = 83.57
+    LabelIncrement = 83.57
     }
-  COLORCUTOFF
+  ColorCutoff
     {
-    RANGEMIN = 1.51391442317
-    RANGEMAX = 4.53726132253
+    RangeMin = 1.51391442317
+    RangeMax = 4.53726132253
     }
-  COLORMAPFILTER
+  ColorMapFilter
     {
-    CONTINUOUSCOLOR
+    ContinuousColor
       {
-      CMIN = 0.00224097348548
-      CMAX = 6.04893477222
+      CMin = 0.00224097348548
+      CMax = 6.04893477222
       }
     }
-$!CONTOURLEVELS NEW
-  CONTOURGROUP = 2
-  RAWDATA
+$!ContourLevels New
+  ContourGroup = 2
+  RawData
 41
 0
 0.1
@@ -369,27 +353,28 @@ $!CONTOURLEVELS NEW
 3.8
 3.9
 4
-$!GLOBALCONTOUR  3
-  VAR = 9
-  LEGEND
+$!GlobalContour  3
+  Var = 9
+  DefNumLevels = 13
+  Legend
     {
-    SHOW = YES
-    XYPOS
+    Show = Yes
+    XYPos
       {
       X = 95
       }
     }
-  COLORMAPFILTER
+  ColorMapFilter
     {
-    CONTINUOUSCOLOR
+    ContinuousColor
       {
-      CMIN = 0
-      CMAX = 1
+      CMin = 0
+      CMax = 1
       }
     }
-$!CONTOURLEVELS NEW
-  CONTOURGROUP = 3
-  RAWDATA
+$!ContourLevels New
+  ContourGroup = 3
+  RawData
 13
 2
 4
@@ -404,27 +389,28 @@ $!CONTOURLEVELS NEW
 22
 24
 26
-$!GLOBALCONTOUR  4
-  VAR = 4
-  LEGEND
+$!GlobalContour  4
+  Var = 4
+  DefNumLevels = 12
+  Legend
     {
-    SHOW = YES
-    XYPOS
+    Show = Yes
+    XYPos
       {
       X = 95
       }
     }
-  COLORMAPFILTER
+  ColorMapFilter
     {
-    CONTINUOUSCOLOR
+    ContinuousColor
       {
-      CMIN = 0
-      CMAX = 1
+      CMin = 0
+      CMax = 1
       }
     }
-$!CONTOURLEVELS NEW
-  CONTOURGROUP = 4
-  RAWDATA
+$!ContourLevels New
+  ContourGroup = 4
+  RawData
 12
 0
 2
@@ -438,27 +424,28 @@ $!CONTOURLEVELS NEW
 18
 20
 22
-$!GLOBALCONTOUR  5
-  VAR = 4
-  LEGEND
+$!GlobalContour  5
+  Var = 4
+  DefNumLevels = 12
+  Legend
     {
-    SHOW = YES
-    XYPOS
+    Show = Yes
+    XYPos
       {
       X = 95
       }
     }
-  COLORMAPFILTER
+  ColorMapFilter
     {
-    CONTINUOUSCOLOR
+    ContinuousColor
       {
-      CMIN = 0
-      CMAX = 1
+      CMin = 0
+      CMax = 1
       }
     }
-$!CONTOURLEVELS NEW
-  CONTOURGROUP = 5
-  RAWDATA
+$!ContourLevels New
+  ContourGroup = 5
+  RawData
 12
 0
 2
@@ -472,27 +459,28 @@ $!CONTOURLEVELS NEW
 18
 20
 22
-$!GLOBALCONTOUR  6
-  VAR = 4
-  LEGEND
+$!GlobalContour  6
+  Var = 4
+  DefNumLevels = 12
+  Legend
     {
-    SHOW = YES
-    XYPOS
+    Show = Yes
+    XYPos
       {
       X = 95
       }
     }
-  COLORMAPFILTER
+  ColorMapFilter
     {
-    CONTINUOUSCOLOR
+    ContinuousColor
       {
-      CMIN = 0
-      CMAX = 1
+      CMin = 0
+      CMax = 1
       }
     }
-$!CONTOURLEVELS NEW
-  CONTOURGROUP = 6
-  RAWDATA
+$!ContourLevels New
+  ContourGroup = 6
+  RawData
 12
 0
 2
@@ -506,27 +494,28 @@ $!CONTOURLEVELS NEW
 18
 20
 22
-$!GLOBALCONTOUR  7
-  VAR = 4
-  LEGEND
+$!GlobalContour  7
+  Var = 4
+  DefNumLevels = 12
+  Legend
     {
-    SHOW = YES
-    XYPOS
+    Show = Yes
+    XYPos
       {
       X = 95
       }
     }
-  COLORMAPFILTER
+  ColorMapFilter
     {
-    CONTINUOUSCOLOR
+    ContinuousColor
       {
-      CMIN = 0
-      CMAX = 1
+      CMin = 0
+      CMax = 1
       }
     }
-$!CONTOURLEVELS NEW
-  CONTOURGROUP = 7
-  RAWDATA
+$!ContourLevels New
+  ContourGroup = 7
+  RawData
 12
 0
 2
@@ -540,27 +529,28 @@ $!CONTOURLEVELS NEW
 18
 20
 22
-$!GLOBALCONTOUR  8
-  VAR = 4
-  LEGEND
+$!GlobalContour  8
+  Var = 4
+  DefNumLevels = 12
+  Legend
     {
-    SHOW = YES
-    XYPOS
+    Show = Yes
+    XYPos
       {
       X = 95
       }
     }
-  COLORMAPFILTER
+  ColorMapFilter
     {
-    CONTINUOUSCOLOR
+    ContinuousColor
       {
-      CMIN = 0
-      CMAX = 1
+      CMin = 0
+      CMax = 1
       }
     }
-$!CONTOURLEVELS NEW
-  CONTOURGROUP = 8
-  RAWDATA
+$!ContourLevels New
+  ContourGroup = 8
+  RawData
 12
 0
 2
@@ -574,282 +564,316 @@ $!CONTOURLEVELS NEW
 18
 20
 22
-$!GLOBALSCATTER 
-  LEGEND
+$!GlobalScatter 
+  Legend
     {
-    XYPOS
+    XYPos
       {
       X = 95
       }
     }
-  REFSCATSYMBOL
+  RefScatSymbol
     {
-    COLOR = RED
-    FILLCOLOR = RED
+    Color = Red
+    FillColor = Red
     }
-$!FIELDMAP  [1]
-  MESH
+$!FieldMap  [1]
+  Mesh
     {
-    SHOW = NO
-    COLOR = BLACK
+    Show = No
+    Color = Black
     }
-  CONTOUR
+  Contour
     {
-    CONTOURTYPE = FLOOD
-    COLOR = BLACK
-    USELIGHTINGEFFECT = YES
+    ContourType = Flood
+    Color = Black
+    UseLightingEffect = Yes
     }
-  VECTOR
+  Vector
     {
-    COLOR = BLACK
+    Color = Black
     }
-  SCATTER
+  Scatter
     {
-    COLOR = BLACK
+    Color = Black
     }
-  SHADE
+  Shade
     {
-    COLOR = CUSTOM2
+    Color = Custom2
     }
-  EDGELAYER
+  EdgeLayer
     {
-    SHOW = YES
-    COLOR = BLACK
-    LINETHICKNESS = 0.1
+    Show = Yes
+    Color = Black
+    LineThickness = 0.1
     }
-  POINTS
+  Points
     {
-    POINTSTOPLOT = SURFACENODES
+    PointsToPlot = SurfaceNodes
     }
-  SURFACES
+  Surfaces
     {
-    SURFACESTOPLOT = NONE
-    IRANGE
+    SurfacesToPlot = KPlanes
+    IRange
       {
-      MAX = 1
+      Max = 1
       }
     }
-  VOLUMEMODE
+  VolumeMode
     {
-    VOLUMEOBJECTSTOPLOT
+    VolumeObjectsToPlot
       {
-      SHOWISOSURFACES = NO
-      SHOWSLICES = NO
-      SHOWSTREAMTRACES = NO
+      ShowIsosurfaces = No
+      ShowSlices = No
+      ShowStreamtraces = No
       }
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!FIELDMAP  [2-4]
-  MESH
+$!FieldMap  [2-4]
+  Mesh
     {
-    COLOR = BLACK
+    Color = Black
     }
-  CONTOUR
+  Contour
     {
-    CONTOURTYPE = FLOOD
-    FLOODCOLORING = GROUP2
-    COLOR = BLACK
-    USELIGHTINGEFFECT = YES
+    ContourType = Flood
+    FloodColoring = Group2
+    Color = Black
+    UseLightingEffect = Yes
     }
-  VECTOR
+  Vector
     {
-    COLOR = BLACK
+    Color = Black
     }
-  SCATTER
+  Scatter
     {
-    COLOR = BLACK
+    Color = Black
     }
-  SHADE
+  Shade
     {
-    COLOR = CUSTOM2
+    Color = Custom2
     }
-  EDGELAYER
+  EdgeLayer
     {
-    SHOW = YES
-    COLOR = BLACK
-    LINETHICKNESS = 0.1
+    Show = Yes
+    Color = Black
+    LineThickness = 0.1
     }
-  POINTS
+  Points
     {
-    POINTSTOPLOT = SURFACENODES
+    PointsToPlot = SurfaceNodes
     }
-  SURFACES
+  Surfaces
     {
-    SURFACESTOPLOT = NONE
-    IRANGE
+    SurfacesToPlot = KPlanes
+    IRange
       {
-      MAX = 1
+      Max = 1
       }
     }
-  VOLUMEMODE
+  VolumeMode
     {
-    VOLUMEOBJECTSTOPLOT
+    VolumeObjectsToPlot
       {
-      SHOWISOSURFACES = NO
-      SHOWSLICES = NO
-      SHOWSTREAMTRACES = NO
+      ShowIsosurfaces = No
+      ShowSlices = No
+      ShowStreamtraces = No
       }
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!THREEDAXIS 
-  XDETAIL
+$!FieldMap  [5]
+  Mesh
     {
-    VARNUM = 1
+    Color = Yellow
     }
-  YDETAIL
+  Contour
     {
-    VARNUM = 2
+    Color = Yellow
     }
-  ZDETAIL
+  Vector
     {
-    VARNUM = 3
+    Color = Yellow
     }
-$!VIEW FIT
-$!THREEDAXIS 
-  AXISMODE = XYZDEPENDENT
-  XYDEPXTOYRATIO = 1
-  DEPXTOYRATIO = 1
-  DEPXTOZRATIO = 1
-$!THREEDAXIS 
-  XDETAIL
+  Scatter
     {
-    SHOWAXIS = NO
-    RANGEMIN = -0.45777268409729005016
-    RANGEMAX = 9.6132263660430901098
-    GRSPACING = 2
-    AXISLINE
+    Color = Yellow
+    }
+  Shade
+    {
+    Color = Custom2
+    }
+  EdgeLayer
+    {
+    Show = Yes
+    Color = Yellow
+    }
+  Points
+    {
+    PointsToPlot = SurfaceNodes
+    }
+  Surfaces
+    {
+    SurfacesToPlot = KPlanes
+    }
+$!ThreeDAxis 
+  XDetail
+    {
+    VarNum = 1
+    }
+  YDetail
+    {
+    VarNum = 2
+    }
+  ZDetail
+    {
+    VarNum = 3
+    }
+$!View Fit
+$!ThreeDAxis 
+  AxisMode = XYZDependent
+  XYDepXToYRatio = 1
+  DepXToYRatio = 1
+  DepXToZRatio = 1
+$!ThreeDAxis 
+  XDetail
+    {
+    ShowAxis = No
+    RangeMin = -0.45777268409729005016
+    RangeMax = 9.6132263660430901098
+    GRSpacing = 2
+    AxisLine
       {
-      EDGE = 2
+      Edge = 2
       }
     }
-$!THREEDAXIS 
-  YDETAIL
+$!ThreeDAxis 
+  YDetail
     {
-    SHOWAXIS = NO
-    RANGEMIN = -2.2000000000000001776
-    RANGEMAX = 2.2000000000000001776
-    GRSPACING = 2
-    AXISLINE
+    ShowAxis = No
+    RangeMin = -2.2000000000000001776
+    RangeMax = 2.2000000000000001776
+    GRSpacing = 2
+    AxisLine
       {
-      EDGE = 3
+      Edge = 3
       }
     }
-$!THREEDAXIS 
-  ZDETAIL
+$!ThreeDAxis 
+  ZDetail
     {
-    SHOWAXIS = NO
-    RANGEMIN = -2.2000000000000001776
-    RANGEMAX = 2.2000000000000001776
-    GRSPACING = 0.5
-    AXISLINE
+    ShowAxis = No
+    RangeMin = -2.2000000000000001776
+    RangeMax = 2.2000000000000001776
+    GRSpacing = 0.5
+    AxisLine
       {
-      EDGE = 2
+      Edge = 3
       }
     }
-$!ISOSURFACEATTRIBUTES  1
-  ISOSURFACESELECTION = ONESPECIFICVALUE
-  ISOVALUE1 = 5.5913820502
-  ISOVALUE2 = 11.641550913
-  ISOVALUE3 = 17.6917197757
-  EFFECTS
+$!IsoSurfaceAttributes  1
+  IsoSurfaceSelection = OneSpecificValue
+  Isovalue1 = 5.5913820502
+  Isovalue2 = 11.641550913
+  Isovalue3 = 17.6917197757
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!ISOSURFACEATTRIBUTES  2
-  DEFINITIONCONTOURGROUP = 2
-  ISOSURFACESELECTION = ONESPECIFICVALUE
-  ISOVALUE1 = 1.51391442317
-  ISOVALUE2 = 3.02558787285
-  ISOVALUE3 = 4.53726132253
-  CONTOUR
+$!IsoSurfaceAttributes  2
+  DefinitionContourGroup = 2
+  IsoSurfaceSelection = OneSpecificValue
+  Isovalue1 = 1.51391442317
+  Isovalue2 = 3.02558787285
+  Isovalue3 = 4.53726132253
+  Contour
     {
-    LINECONTOURGROUP = 2
-    FLOODCOLORING = GROUP2
+    LineContourGroup = 2
+    FloodColoring = Group2
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!ISOSURFACEATTRIBUTES  3
-  DEFINITIONCONTOURGROUP = 3
-  ISOSURFACESELECTION = ONESPECIFICVALUE
-  CONTOUR
+$!IsoSurfaceAttributes  3
+  DefinitionContourGroup = 3
+  IsoSurfaceSelection = OneSpecificValue
+  Contour
     {
-    LINECONTOURGROUP = 3
-    FLOODCOLORING = GROUP3
+    LineContourGroup = 3
+    FloodColoring = Group3
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!ISOSURFACEATTRIBUTES  4
-  DEFINITIONCONTOURGROUP = 4
-  ISOSURFACESELECTION = ONESPECIFICVALUE
-  CONTOUR
+$!IsoSurfaceAttributes  4
+  DefinitionContourGroup = 4
+  IsoSurfaceSelection = OneSpecificValue
+  Contour
     {
-    LINECONTOURGROUP = 4
-    FLOODCOLORING = GROUP4
+    LineContourGroup = 4
+    FloodColoring = Group4
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!ISOSURFACEATTRIBUTES  5
-  DEFINITIONCONTOURGROUP = 5
-  ISOSURFACESELECTION = ONESPECIFICVALUE
-  CONTOUR
+$!IsoSurfaceAttributes  5
+  DefinitionContourGroup = 5
+  IsoSurfaceSelection = OneSpecificValue
+  Contour
     {
-    LINECONTOURGROUP = 5
-    FLOODCOLORING = GROUP5
+    LineContourGroup = 5
+    FloodColoring = Group5
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!ISOSURFACEATTRIBUTES  6
-  DEFINITIONCONTOURGROUP = 6
-  ISOSURFACESELECTION = ONESPECIFICVALUE
-  CONTOUR
+$!IsoSurfaceAttributes  6
+  DefinitionContourGroup = 6
+  IsoSurfaceSelection = OneSpecificValue
+  Contour
     {
-    LINECONTOURGROUP = 6
-    FLOODCOLORING = GROUP6
+    LineContourGroup = 6
+    FloodColoring = Group6
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!ISOSURFACEATTRIBUTES  7
-  DEFINITIONCONTOURGROUP = 7
-  ISOSURFACESELECTION = ONESPECIFICVALUE
-  CONTOUR
+$!IsoSurfaceAttributes  7
+  DefinitionContourGroup = 7
+  IsoSurfaceSelection = OneSpecificValue
+  Contour
     {
-    LINECONTOURGROUP = 7
-    FLOODCOLORING = GROUP7
+    LineContourGroup = 7
+    FloodColoring = Group7
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!ISOSURFACEATTRIBUTES  8
-  DEFINITIONCONTOURGROUP = 8
-  ISOSURFACESELECTION = ONESPECIFICVALUE
-  CONTOUR
+$!IsoSurfaceAttributes  8
+  DefinitionContourGroup = 8
+  IsoSurfaceSelection = OneSpecificValue
+  Contour
     {
-    LINECONTOURGROUP = 8
-    FLOODCOLORING = GROUP8
+    LineContourGroup = 8
+    FloodColoring = Group8
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
+    LightingEffect = Gouraud
     }
-$!SLICEATTRIBUTES  1
-  PRIMARYPOSITION
+$!SliceAttributes  1
+  PrimaryPosition
     {
     X = 0
     Y = 0
@@ -858,169 +882,181 @@ $!SLICEATTRIBUTES  1
     J = 1
     K = 1
     }
-  EDGELAYER
+  StartPosition
     {
-    SHOW = NO
+    X = 1
+    Y = -49.442672348
+    Z = -49.4441184998
     }
-  EFFECTS
+  EndPosition
     {
-    LIGHTINGEFFECT = GOURAUD
-    SURFACETRANSLUCENCY = 10
+    X = 19
+    Y = 49.4428020477
+    Z = 49.4356498718
     }
-  SLICECONSTRAINT
+  EdgeLayer
     {
-    INCLUDE = NO
-    ORIGIN
+    Show = No
+    }
+  Effects
+    {
+    LightingEffect = Gouraud
+    SurfaceTranslucency = 10
+    }
+  SliceConstraint
+    {
+    Include = No
+    Origin
       {
       X = 0
       Y = 0
       Z = 0
       }
-    BOXDIMENSION
+    BoxDimension
       {
       X = 0
       Y = 0
       Z = 0
       }
     }
-$!SLICEATTRIBUTES  2
-  SLICESURFACE = YPLANES
-  EDGELAYER
+$!SliceAttributes  2
+  SliceSurface = YPlanes
+  EdgeLayer
     {
-    SHOW = NO
+    Show = No
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
-    SURFACETRANSLUCENCY = 10
+    LightingEffect = Gouraud
+    SurfaceTranslucency = 10
     }
-$!SLICEATTRIBUTES  3
-  SLICESURFACE = ZPLANES
-  EDGELAYER
+$!SliceAttributes  3
+  SliceSurface = ZPlanes
+  EdgeLayer
     {
-    SHOW = NO
+    Show = No
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
-    SURFACETRANSLUCENCY = 10
+    LightingEffect = Gouraud
+    SurfaceTranslucency = 10
     }
-$!SLICEATTRIBUTES  4
-  EDGELAYER
+$!SliceAttributes  4
+  EdgeLayer
     {
-    SHOW = NO
+    Show = No
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
-    SURFACETRANSLUCENCY = 10
+    LightingEffect = Gouraud
+    SurfaceTranslucency = 10
     }
-$!SLICEATTRIBUTES  5
-  SLICESURFACE = YPLANES
-  EDGELAYER
+$!SliceAttributes  5
+  SliceSurface = YPlanes
+  EdgeLayer
     {
-    SHOW = NO
+    Show = No
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
-    SURFACETRANSLUCENCY = 10
+    LightingEffect = Gouraud
+    SurfaceTranslucency = 10
     }
-$!SLICEATTRIBUTES  6
-  SLICESURFACE = ZPLANES
-  EDGELAYER
+$!SliceAttributes  6
+  SliceSurface = ZPlanes
+  EdgeLayer
     {
-    SHOW = NO
+    Show = No
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
-    SURFACETRANSLUCENCY = 10
+    LightingEffect = Gouraud
+    SurfaceTranslucency = 10
     }
-$!SLICEATTRIBUTES  7
-  EDGELAYER
+$!SliceAttributes  7
+  EdgeLayer
     {
-    SHOW = NO
+    Show = No
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
-    SURFACETRANSLUCENCY = 10
+    LightingEffect = Gouraud
+    SurfaceTranslucency = 10
     }
-$!SLICEATTRIBUTES  8
-  SLICESURFACE = YPLANES
-  EDGELAYER
+$!SliceAttributes  8
+  SliceSurface = YPlanes
+  EdgeLayer
     {
-    SHOW = NO
+    Show = No
     }
-  EFFECTS
+  Effects
     {
-    LIGHTINGEFFECT = GOURAUD
-    SURFACETRANSLUCENCY = 10
+    LightingEffect = Gouraud
+    SurfaceTranslucency = 10
     }
-$!STREAMATTRIBUTES 
-  STREAMTIMING
+$!StreamAttributes 
+  StreamTiming
     {
-    MARKSIZE = 1
-    MARKSYMBOL
+    MarkSize = 1
+    MarkSymbol
       {
-      GEOMSHAPE = SPHERE
+      GeomShape = Sphere
       }
     }
-  RODRIBBON
+  RodRibbon
     {
-    EFFECTS
+    Effects
       {
-      LIGHTINGEFFECT = GOURAUD
+      LightingEffect = Gouraud
       }
     }
-  MAXSTEPS = 10000
-$!GLOBALTHREED 
-  AXISSCALEFACT
+  MaxSteps = 10000
+$!GlobalThreeD 
+  AxisScaleFact
     {
     X = 1
     Y = 1
     Z = 1
     }
-  ROTATEORIGIN
+  RotateOrigin
     {
     X = 8.290642320533426
     Y = -0.2453844745014831
     Z = -0.2879701905375723
     }
-  LIGHTSOURCE
+  LightSource
     {
-    XYZDIRECTION
+    XYZDirection
       {
       X = -0.2
       Y = -0.2
       Z = 0.9591663046625438
       }
-    INTENSITY = 75
-    BACKGROUNDLIGHT = 25
-    SPECULARINTENSITY = 40
-    SPECULARSHININESS = 60
+    Intensity = 75
+    BackgroundLight = 25
+    SpecularIntensity = 40
+    SpecularShininess = 60
     }
-  LINELIFTFRACTION = 0.2
-  SYMBOLLIFTFRACTION = 0.6
-  VECTORLIFTFRACTION = 0.7
-  NEARPLANEFRACTION = 0.1
-$!THREEDVIEW 
-  PSIANGLE = 90
-  THETAANGLE = 0
-  VIEWERPOSITION
+  LineLiftFraction = 0.2
+  SymbolLiftFraction = 0.6
+  VectorLiftFraction = 0.7
+  NearPlaneFraction = 0.1
+$!ThreeDView 
+  PSIAngle = 90
+  ThetaAngle = 0
+  ViewerPosition
     {
     X = 5.824953801739243
     Y = -61.30278396857585
     Z = 0.07875027586654892
     }
-  VIEWWIDTH = 14.4292
-$!FIELDLAYERS 
-  SHOWCONTOUR = YES
-  SHOWSHADE = YES
-  SHOWEDGE = NO
-$!STREAMTRACELAYERS 
-  SHOW = NO
-$!FRAMECONTROL ACTIVATEBYNUMBER
-  FRAME = 1
-$!SETSTYLEBASE CONFIG
+  ViewWidth = 14.4292
+$!FieldLayers 
+  ShowContour = Yes
+  ShowShade = Yes
+  ShowEdge = No
+$!StreamtraceLayers 
+  Show = No
+$!FrameControl ActivateByNumber
+  Frame = 1
+$!SetStyleBase Config

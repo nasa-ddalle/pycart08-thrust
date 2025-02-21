@@ -1,242 +1,260 @@
 #!/bin/csh -f
-# $Id: aero.csh,v 1.13 2013/06/14 20:33:51 maftosmi Exp $
+
+# $Id: aero.csh,v 1.27 2022/10/26 13:58:40 mnemec Exp $
 
 # AERO: Adjoint Error Optimization
 # Script to drive adjoint-based mesh refinement
 
+# ATTENTION: requires Cart3D release 1.5 or newer
+
 # M. Nemec, Marian.Nemec@nasa.gov
-# Oct 2006, last update: April 2013
+# Oct 2006, last update: Oct 2021
 
-# Usage:
+# Help:
 # ------
-# % ./aero.csh
-#
-# or optionally: 
-# % ./aero.csh restart
-# use the restart flag to run more adaptation cycles, including
-# abnormal exits due to machine crashes, etc.
-#
-# or optionally:
-# % ./aero.csh jumpstart
-# use the jumpstart flag to start from a given mesh. Put a Mesh.c3d.Info file
-# and a Mesh file (Mesh.mg.c3d, Mesh.R.c3d, or Mesh.c3d) in the same directory
-# as aero.csh (and other inputs) and the run will start from this mesh
-
-# The script returns 0 on success and 1 if an error occurs
+# % ./aero.csh help
 
 # Read tips, hints and documentation in $CART3D/doc/adjoint
+# See examples in $CART3D/cases/samples_adapt
 
 # Set user specified options below, defaults are suggested
 
-# Important file names:
-# Components.i.tri, input.c3d, input.cntl
+# -------------
+# Basic options
+# -------------
 
-# control thread affinity for linux
+# Number of adaptation cycles, e.g. if you pick 8 then the run will terminate
+# after the flow solve in adapt08. Min value is 0, max value is 99.
+set n_adapt_cycles = 7
+
+# maxR for initial mesh (cubes)
+set maxR = 7
+
+# Spanwise orientation (-y_is_spanwise flag in flowCart)
+set y_is_spanwise = 0    # {Yes, No} = {1, 0}
+
+# Set mesh2d = 1 for 2D cases, mesh2d = 0 for 3D cases
+set mesh2d = 0
+
+# ----------------
+# Advanced options
+# ----------------
+
+# Uncomment next line to control thread affinity (improve parallel performance)
+# on linux machines
+#                          ...generally safer on hyperthreaded systems
+#setenv KMP_AFFINITY scatter
+#                     ...may be slightly faster when not hyperthreaded
 #setenv KMP_AFFINITY compact
 
-# choose functional error tolerance
-set etol = 0.000001
+# ----- Flow and adjoint solver settings -----
 
-# maxR for initial mesh (cubes) 
-set maxR = 8
+# Number of fine-grid flowCart iterations on initial mesh
+set it_fc = 100
+# Additional flowCart iterations on each new mesh
+# cycle         1   2   3   4   5   6   7   8   9  10
+set ws_it = ( 100 150 150 200 200 200 200 200 250 250 )
+# Number of fine-grid adjointCart iterations on each mesh
+set it_ad = 150
 
-# max number of cells allowed in mesh
-# if the new mesh exceeds this limit, the adaptation terminates
-set max_nCells = 50000000
+# Number of flowCart multigrid levels (default=3)
+set mg_fc = 4
+# Number of adjointCart multigrid levels (usually same as flowCart)
+set mg_ad = 4
 
-# number of adaptation cycles
-set n_adapt_cycles = 2
-
-# number of flowCart iters on initial mesh
-set it_fc = 75
-# additional flowCart iters on each new mesh
-# cycle        1  2  3  4  5  6  7  8  9 10  11  12
-set ws_it = ( 50 50 50 50 50 50 50 50 50 50 100 100 ) 
-# number of adjointCart iters
-set it_ad = 120
-
-# cfl number: usually ~1.1 but with power may be lower, i.e. 0.8
-set cfl    = 1.1
-# minimum cfl number
-# in case of convergence problems flowCart will try to run with cflmin 
-set cflmin = 0.8
-
-# multigrid levels
-# flowCart mg levels
-set mg_fc = 3
-# adjointCart mg levels (usually same as flowCart)
-set mg_ad = 3
-
-# Limiter: default 5, minmod, which is most robust. In practice, accuracy is
-# much better with limiter 2 (van Leer) with still excellent robustness 
+# Limiter: default 1 (Barth-Jespersen) is the most accurate, 2 (van Leer) is
+# smoother and may offer deeper convergence. Limiter 5 (minmod) is most robust
+# and 0 means no limiter.
 set limiter = 2
 
-# spanwise orientation (default null)
-set y_is_spanwise
-#set y_is_spanwise = -y_is_spanwise
+# Functional averaging window in terms of flowCart mg-cycles. This is useful
+# for cases that do not converge to steady-state. The averaged functional is
+# reported in the fourth column of fun_con.dat and in all_outputs.avg.dat
+# (default: avg_window = 1).
+set avg_window = 1
 
-# use file name preSpec.c3d.cntl for preSpec regions (either BBoxes or XLevs
-# for cubes or ABoxes for adapt) 0 = no (default), 1 = yes
+# ----- Mesh adaptation settings ------
+
+# Maximum number of cells in the penultimate mesh, i.e. number of cells allowed
+# in the working mesh for the final embedding.  The error estimation step
+# requires ~6.9 GB per million cells.  You can use this to gauge the largest
+# mesh your memory resources allow. Default value is 9M, which assumes a
+# machine with 64 GB of memory.
+set max_cells2embed = 70000000
+
+# Specify mesh growth for each adaptation cycle. Mesh growth should be greater
+# than 1 and less than or equal to 8. Specifying 8 means that you allow
+# refinement of every cell in the mesh.  Recommended minimum growth is 1.1. We
+# found the sequence below to work well for many problems: if your initial mesh
+# has roughly 10,000 cells, then after 10 adaptations it will surpass 10
+# million cells. (For 2D cases, we recommend growth factors of 1.2 for first
+# two cycles and 1.4 for the rest.) If you enter 0 for any cycle, then the mesh
+# growth is selected automatically in that cycle.
+# cycle               0   1   2   3   4   5   6   7   8   9  10
+set mesh_growth = ( 1.5 1.5 2.0 2.0 2.0 2.0 2.0 2.5 2.5 2.5 2.5 )
+
+# Mesh growth can be selected automatically by enabling the auto_growth
+# option. This is a new feature, where aero.csh sets the refinement threshold
+# to the mean of the error distribution. This feature frequently yields better
+# results than the default mesh_growth array.
+set auto_growth = 0    # 0=no, 1=yes, default=0
+
+# Set apc: adapt or interface propagation cycle
+# a = adapt
+# p = propagate interfaces (adapt mesh without reducing finest cell size)
+# Use p-cycles sparingly. We recommend using one initial p-cycle to reduce the
+# bias of the initial mesh. P-cycles should also be used once the volume mesh
+# over-refines your surface triangulation.
+# cycle     0 1 2 3 4 5 6 7 8 9 10
+set apc = ( p a a a a a a a a a a )
+
+# ----- Customization of initial mesh -----
+
+# Use file name preSpec.c3d.cntl for preSpec regions (either BBoxes or XLevs
+# for cubes or ABoxes for adapt) 0=no, 1=yes, default=0
 set use_preSpec = 0
 
-# Specify mesh growth for each adapt cycle. Mesh growth may range between 1.01
-# to 8 - specifying 8 means that you allow refinement of every cell in the
-# mesh.  We found the sequence below to work well for many problems: if your
-# initial mesh has roughly 10,000 cells, then after 10 adaptations it will
-# surpass 10 million cells. (For 2D cases, we recommend growth factors of 1.25
-# for first two cycles and 1.5 for the rest.)  If you wish to set the
-# adaptation threshold manually, see the ath array in Expert Options.
-# cycle               0   1   2   3   4   5   6   7   8   9  10  11  12
-set mesh_growth = ( 1.5 1.5 2.0 2.0 2.0 2.0 2.0 2.5 2.5 2.5 2.5 2.5 2.5 )
+# Initial mesh parameters (cubes)
+set cubes_a = 10    # angle criterion (-a)
+set cubes_b = 3     # buffer layers   (-b)
 
-# set apc: adapt or interface propagation cycle
-# a = adapt 
-# p = propagate interfaces (adapt with fixed maxR)
-# use sparingly - we recommend switching to p cycles once your volume mesh
-# over-refines your surface triangulation and using p on the first cycle to
-# reduce the bias of the initial mesh
-# cycle     0 1 2 3 4 5 6 7 8 9 10 11 12 
-set apc = ( p a a a a a a a a a  a  a  a )
+# Remesh: use refMesh.{mg.c3d,c3d.Info} to guide cell density of initial mesh
+# (cubes -remesh option). If turned on, we recommend increasing mg_init
+# (initial number of multigrid levels, see flag below) to 3 or 4. Note that the
+# cubes_a flag is automatically set to 20 if it is less than 20.  0=no, 1=yes,
+# default=0
+set use_remesh = 0
 
-# Set extra refinement levels for final mesh.  This allows you to adapt the
+# Internal mesh (cubes): 0=no, 1=yes, default=0
+set Internal = 0
+
+# ----- Run control -----
+
+# Do error analysis on finest mesh? 0=no, 1=yes, default=0
+set error_on_finest = 0
+
+# Exit on reaching the finest mesh, do not flow solve there. This is useful if
+# you wish to run a different solver (e.g. the MPI version) on the finest mesh.
+# The final adapt?? directory holds the final mesh, all the input files, as
+# well as a FLOWCART file that contains the appropriate command line.
+set skip_finest = 0    # 0=no, 1=yes, default=0
+
+# Maximum level of refinement allowed in the mesh. This controls the size of
+# the smallest cell in the mesh. Default value is 21, which is the maximum
+# supported by Cart3D. If max_ref_level is reached before n_adapt_cycles, then
+# propagation (p) cycles will be executed until n_adapt_cycles is satisfied.
+set max_ref_level = 21
+
+# Set extra refinement levels for the final mesh. This allows you to adapt the
 # mesh multiple times with the same error map in the last adapt cycle, thereby
 # bypassing the flow, adjoint, and error estimation steps. Use with caution:
 # the mesh should be fine enough so that the error estimate is decreasing -
 # preferably the solution should be in the Richardson region. This helps
 # circumvent the memory limitations of the error estimation code. Default value
-# is 0 and maximum allowed value is 3
+# is 0 and maximum allowed value is 3.
 set final_mesh_xref = 0
-
-# Functional averaging window in terms of flowCart mg-cycles. This is useful
-# for cases that do not converge to steady-state. The averaged functional is
-# reported in the fourth column of fun_con.dat, and is also used to set
-# relative error (default: avg_window = 1).
-set avg_window = 1
-
-# set mesh2d = 1 for 2D cases, mesh2d = 0 for 3D cases
-set mesh2d = 0
-
-# binaryIO tecplot output (default yes)
-set binaryIO 
-
-# adaptation restart 
-# use command line argument or set adapt_restart = 1 for restarts
-set adapt_restart = 0
-
-# adaptation jumpstart 
-# use command line argument or set adapt_jumpstart = 1 to start from an existing mesh
-set adapt_jumpstart = 0
-
-# verbose mode
-set verb
-# set verb = -v
-
-# Initial mesh parameters (cubes)
-set cubes_a = 10 # angle criterion (-a)
-set cubes_b = 2  # buffer layers   (-b)
-
-# Internal mesh (cubes)
-set Internal
-#set Internal = '-Internal'
-
-# --------------------------------------
-# Experimental options under development
-# --------------------------------------
-
-# Select relative (use_relative_etol=1) or absolute (use_relative_etol=0) error
-set use_relative_etol = 0
-# For relative error, etol is computed as a fraction of functional
-# default 4% -> 0.04
-set etol_fraction = 0.04
-# smallest allowable etol value (in case your functional is close to zero) 
-set etol_min = 1.e-4
-
-# To solve adjoint equation on finest mesh, set adjoint_on_finest=1
-set adjoint_on_finest = 0
-
-# To do error analysis on finest mesh, set error_on_finest=1
-set error_on_finest = 0
-
-# Keep final error map in "./EMBED/Restart.XX.file"
-# Useful for % cubes -remesh ..., default value is 0
-set keep_error_maps = 0  # {Yes, No} = {1, 0}
-
-# Refine all cells: useful for uniform mesh refinement studies. This overrides
-# the error map and forces adapt to refine all cells. The adjoint correction
-# term and error estimate are reported. Default value is 0
-set refine_all_cells = 0  # {Yes, No} = {1, 0}
 
 # ---------------------------------------------------
 # EXPERT user options: flags below are rarely changed
 # ---------------------------------------------------
 
-# Fine tuning of mesh growth when performing extra refinements on the final
-# mesh, i.e. when $final_mesh_xref>0 and $mesh_growth is being used.  The mesh
-# growth for each extra refinement is given by:
-# ($mesh_growth-1)*$xref_fraction+1
-# The main idea is that as extra refinement cycles are performed, the
-# adaptation focuses on only the highest error cells. This is where the error
-# map is most accurate and most adaptation is required. The value should be
-# between 0 and 1, and at most three extra refinements are allowed
-set xref_fraction = ( 1.0 1.0 0.8 )
+# Cut-cell gradients: 0=best robustness (default), 1=best accuracy
+# If mesh2d=1, then we set tm=1 automatically
+set tm = 0
 
-# flow solver warm starts (default 1=yes, 0=no)
-set use_warm_starts = 1
+# CFL number: usually ~1.1 but with power may be lower, i.e. 0.8
+set cfl = 1.1
+# Minimum CFL number, used in case of convergence problems with flowCart
+set cflmin = 0.8
 
-# grid sequencing or multigrid (mg default)
+# Adaptation error tolerance. Run terminates if the error estimate falls
+# below this value. At least 2 cycles will be run before terminating based on
+# this tolerance to avoid triggering based on an inappropriate initial mesh.
+set etol = 0.000001
+
+# Grid sequencing (-gs) or multigrid (-mg) (-mg default)
 # flowCart
-set mg_gs_fc = '-gs'
 set mg_gs_fc = '-mg'
 # adjointCart
-set mg_gs_ad = '-gs'
 set mg_gs_ad = '-mg'
 
-# full multigrid: default is to use full multigrid, except in cases with power
+# Full multigrid: default is to use full multigrid, except in cases with power
 # boundary conditions (automatic with warm starts)
-set fmg 
-# set fmg = -no_fmg
+set fmg = 1    # 0=no, 1=yes, default=1
 
-# pmg: poly multigrid, default null
-set pmg 
-# set pmg = '-pmg'
+# Polynomial multigrid, helps certain tough cases converge deeper
+set pmg = 0    # 0=no, 1=yes, default=0
 
-# number of multigrid levels for initial mesh (default 2, ramps up to mg_fc/ad)
+# Buffer limiter: improves stability for flows with strong off-body shocks
+set buffLim = 0    # 0=no, 1=yes, default=0
+
+# Number of multigrid levels for initial mesh (default 2, ramps up to mg_fc/ad)
 set mg_init = 2
 
-# subcell
-set subcell
-#set subcell = '-subcell'
+# Set names of executables (must be in path)
+set flowCart        = flowCart
+set xsensit         = xsensit
+set adjointCart     = adjointCart
+set adjointErrorEst = adjointErrorEst_quad
 
-# buffer limiter: improves stability for flow with strong off-body shocks
-set buffLim 
-# set buffLim = '-buffLim'
+# MPI prefix: uncomment next line and also remember to set the correct flowCart
+# executable above. If not running MPI, comment out next line.
+# set mpi_prefix = 'mpiexec -n 16'
 
-# cut-cell gradients: 0=best robustness (default), 1=best accuracy
-# if mesh2d=1, then we set tm=1 automatically
-set tm = 0 # (0 or 1)
+# Flow solver warm-starts: 0=no, 1=yes, default=1
+set use_warm_starts = 1
 
-# Run adjoint solver in first-order mode. In hard cases where attempts to run
-# second-order adjoints with or without pmg consistently fail, you can
-# short-circuit this and go directly to first-order adjoints by setting
-# adj_first_order = 1. The flow solution remains second-order, but all adjoints
-# will be first-order accurate. Use caution: this should give a consistent set
-# of error estimates, which is probably safe for relative errors and meshing,
-# but may be inaccurate with respect to a second-order run.  Default value is
-# adj_first_order = 0
-set adj_first_order = 0 # (0 or 1)
+# Subcell resolution: 0=no, 1=yes, default=0
+set subcell = 0
 
-# In 3D cases with tm=1, error estimation is done with tm=0 for robustness. If
-# you want to use tm=1 in error estimation, then you need to set err_TM1=1
-# below. This is recommended only for simple (academic) cases that converge
-# well. In general, the default (0) setting is _strongly_ recommended.
-set err_TM1 = 0 # (0 or 1)
+# Run adjoint solver in 1st-order mode. In hard cases where aero.csh
+# consistently falls back on 1st-order mode after trying more accurate
+# settings, this setting will short-circuit the process and go directly to
+# 1st-order adjoints. The flow solution remains 2nd-order. The adjoints should
+# still provide a consistent set of error estimates, which is probably safe for
+# _relative_ errors and adaptive meshing. However, use caution: the error
+# estimates may be inaccurate with respect to a 2nd-order run.
+# default 0=auto, 1=force 1st order
+set adj_first_order = 0
 
-# In 3D cases with tm=1, adjoint solver robustness is much better with tm=0. If
-# you want to force tm=1 in adjoint solves, then you need to set adj_TM1=1
-# below.  In general, the default (0) setting is _strongly_ recommended. Note
-# that adjoint convergence is monitored, so if divergence occurs then tm=0 is
-# set during runtime.
-set adj_TM1 = 0 # (0 or 1)
+# In 3D cases with tm=1, error estimation is still done with tm=0 for
+# robustness. This flag forces aero.csh to use tm=1 in error estimation. This
+# is recommended only for simple (academic) cases that converge well. In
+# general, the default (0) setting is _strongly_ recommended.
+set err_TM1 = 0    # default 0=off, 1=force tm 1 for error estimation
+
+# In 3D cases with tm=1, adjoint solutions are still done with tm=0 for
+# robustness. This flag forces aero.csh to use tm=1 for the adjoint solves. In
+# general, the default (0) setting is _strongly_ recommended. Note that
+# adjoint convergence is monitored, so if divergence occurs then tm=0 is set
+# during runtime.
+set adj_TM1 = 0    # default 0=off, 1=force tm 1 for adjoint solutions
+
+# If set, the flow solve on the final mesh will use *at least* this many
+# iterations. flowCart will use whichever is greater: (1) this value (2) the
+# ws_it array entry. This helps when you do not know how many adaptation cycles
+# will be necessary to meet the termination conditions and you would like a
+# well converged answer on the final mesh. Default value is 0.
+set ws_it_min_final = 0
+
+# When running optimization with adaptive meshing, this flag allows different
+# levels of adjoint convergence for the mesh adaptation functional vs. the
+# design functionals. The iterations for the adjoint solutions used in gradient
+# computations are it_ad + delta_it_ad. The main idea is to use fewer
+# iterations when building the mesh (for speed) and go for deeper converge in
+# the gradient adjoints (for better accuracy).  Default value is 0.
+set delta_it_ad = 0
+
+# Keep final error map in EMBED/Restart.XX.file, useful for cubes -remesh
+set keep_error_maps = 0    # default 0=no, 1=yes
+
+# Refine all cells: useful for uniform mesh refinement studies. This overrides
+# the error map and forces adapt to refine all cells. The adjoint correction
+# term and error estimate are reported.
+set refine_all_cells = 0    # default 0=no, 1=yes
+
+# adapt buffers (default 1)
+set buf = 1
 
 # Set the number of multigrid levels when aero.csh drops down to pMG due to
 # convergence problems. Default value is 2, which means no geometric
@@ -245,152 +263,394 @@ set adj_TM1 = 0 # (0 or 1)
 # selected above.  It influences only the automatic run control of aero.csh.
 set mg_pmg_auto = 2
 
-# Adaptation threshold array: if you wish to set ath manually, set mesh_growth
-# to null (uncomment next line) and set the ath array:
-#set mesh_growth
-# cycle      0 1 2 3 4 5 6 7 8 9 10 11 12
-set ath = ( 16 8 4 2 1 1 1 1 1 1  1  1  1 )
+# Fine tuning of mesh growth when performing extra refinements on the final
+# mesh, i.e. when $final_mesh_xref>0 and $mesh_growth are being used.
+# The mesh growth for each extra refinement is given by:
+# ($mesh_growth-1)*$xref_fraction+1
+# The main idea is that as extra refinement cycles are performed, the
+# adaptation focuses on only the highest error cells. This is where the error
+# map is most accurate and most adaptation is required. Each value should be
+# between 0.2 and 1, and at most three extra refinements are allowed.
+set xref_fraction = ( 1.0 1.0 0.8 )
 
-# adapt buffers (default 1)
-set buf = 1
+# Safety factor used in aero_getResults.pl to terminate the run if the error
+# indicator value increases by more than this factor in successive
+# cycles. Default value is 8.
+set error_safety_factor = 8
 
-# set name of user time output file
-set time_file = user_time.dat
+# Adaptation restart: Alternative to command line argument 'restart'
+set adapt_restart = 0
 
-# set names of executables 
-set flowCart        = flowCart
-set xsensit         = xsensit
-set adjointCart     = adjointCart
-set adjointErrorEst = adjointErrorEst_quad
+# Adaptation jumpstart from existing mesh: Alternative to command line
+# argument jumpstart
+set adapt_jumpstart = 0
+
+# Write Tecplot output files in binary format
+set binaryIO = 1    #  default 1=yes, 0=no
+
+# Verbose mode for executables [flowCart/xsensit/adjointCart/adjointErrorEst]
+# 0=no, 1=yes, default=0
+set verb = 0
+
+# minimum mesh growth
+set min_growth = '1.1'
+
+# Adaptation threshold array: To set ath manually, unset mesh_growth
+# and set the ath array (uncomment following two lines):
+# cycle      0  1 2 3 4 5 6 7 8 9 10
+
+#set ath = ( 32 16 8 4 2 1 1 1 1 1  1 )
+#unset mesh_growth
+
+# Output cell-wise errors, useful for making histograms: 0=off, 1=yes,
+# default=0
+set histo = 0
 
 # ---------------------------------------------
 # STOP: no user specified parameters below here
 # ---------------------------------------------
 
-# restart via command line
-if ( 0 != $#argv ) then
-  if ( $argv[1] == restart ) then
-    set adapt_restart = 1
-  else if ( $argv[1] == jumpstart ) then
-    set adapt_jumpstart = 1
+# parse command line
+while ( $#argv )
+  if ( "$argv[1]" == restart || "$argv[1]" == '-restart' ) then
+    @ adapt_restart = 1
+  else if ( "$argv[1]" == jumpstart || "$argv[1]" == '-jumpstart' ) then
+    @ adapt_jumpstart = 1
+  else if ( "$argv[1]" == skipfinest || "$argv[1]" == '-skipfinest' ) then
+    @ skip_finest = 1
+  else if ( "$argv[1]" == archive || "$argv[1]" == '-archive' ) then
+    echo 'Generating run archive'
+    aero_archive.csh
+    exit 0
+  else if ( "$argv[1]" == help || "$argv[1]" == '-help' || "$argv[1]" == '--help' || "$argv[1]" == '-' || "$argv[1]" == '-h' ) then
+    cat << HELP
+Usage:
+
+ ./aero.csh [help] [restart or jumpstart] [skipfinest] [archive]
+
+ Use 'restart' or '-restart' to run more adaptation cycles. Handles abnormal
+ exits due to machine crashes, etc.  To restart from a specific 'adapt??'
+ directory, delete all adapt directories that follow it. For example, to
+ restart from adapt06 in a run that finished at adapt08, delete adapt07 and
+ adapt08 and restart. This flag is ignored if there are no 'adapt??'
+ directories and an error is reported if the file AERO_FILE_ARCHIVE.txt is
+ detected.
+
+ Use 'jumpstart' or '-jumpstart' to start from a given mesh.  Put a
+ Mesh.c3d.Info file and a mesh file (Mesh.mg.c3d, Mesh.R.c3d, or Mesh.c3d) in
+ the same directory as aero.csh (and other inputs) and the run will start from
+ this mesh.
+
+ Use 'skipfinest' or '-skipfinest' to skip solving on the finest mesh. This is
+ used when wishing to run a different solver on the finest mesh, e.g. the MPI
+ version of flowCart.  The final adapt directory contains the final mesh, all
+ the input files and a FLOWCART.txt file that contains the command line. Note
+ that the BEST link points to the previous 'adapt??' directory.
+
+ Use 'archive' or '-archive' to generate a run archive.  This option deep
+ cleans the run directory tree, keeping only the essential output files.  Once
+ archived, restarts are not possible.  This option simply calls the
+ aero_archive.csh script.
+
+ Script returns 0 on success and 1 on error. Read tips, hints and documentation
+ in \$CART3D/doc/adjoint. Must-have files: Components.i.tri, input.c3d and
+ input.cntl. Use 'touch STOP' to force a stop after the next flow solve.
+
+ Setting environment variable debug_verbose (% setenv debug_verbose) triggers
+ more verbose output.
+
+HELP
+exit 0
+  else
+    echo "ERROR: $argv[1] unknown option"
+    echo '   ... Try ./aero.csh help'
+    goto ERROR
   endif
+  shift
+end # while
+
+if ( 1 == $adapt_restart && 1 == $adapt_jumpstart ) then
+  echo 'ERROR: conflicting options, cannot both restart and jumpstart'
+  echo '   ... Try ./aero.csh help'
+  goto ERROR
 endif
+
+# Remove any aliases on certain system commands
+# Avoids using \ everywhere (thanks GRA)
+unalias cp
+unalias ls
+unalias rm
+unalias mv
+unalias grep
+unalias awk
 
 limit stacksize unlimited
 
-# check if safe to run
-if ( 1 != $adapt_restart ) then
-  \ls -d adapt?? >& /dev/null
-  if ( $status == 0 ) then
-    echo "adapt?? directories exist"
-    echo "use '\rm -r adapt??' before starting a new run"
-    echo "for restarts, please use 'aero.csh restart'"
-    goto ERROR
+if ( 0 == $y_is_spanwise ) then
+  set y_is_spanwise
+else
+  set y_is_spanwise = -y_is_spanwise
+endif
+
+if ( 0 == $binaryIO ) then
+  set binaryIO
+else
+  set binaryIO = '-binaryIO'
+endif
+
+if ( 0 == $verb ) then
+  set verb
+else
+  set verb = '-v'
+endif
+
+if ( 0 == $Internal ) then
+  set Internal
+else
+  set Internal = '-Internal'
+endif
+
+if ( 0 == $fmg ) then
+  set fmg = '-no_fmg'
+else
+  set fmg
+endif
+
+if ( 1 == $pmg ) then
+  set pmg = '-pmg'
+else
+  set pmg
+endif
+
+if ( 0 == $subcell ) then
+  set subcell
+else
+  set subcell = '-subcell'
+endif
+
+if ( 0 == $buffLim ) then
+  set buffLim
+else
+  set buffLim = '-buffLim'
+endif
+
+if ( 0 == $histo ) then
+  set histo
+else
+  set histo = '-histo'
+endif
+
+set run_root = `pwd`
+
+if ( 1 == $adapt_jumpstart ) then
+  if ( ! -d JUMPSTART ) then
+    mkdir  -p JUMPSTART
+  endif
+
+  if ( -e Mesh.c3d.Info ) then
+    mv -f Mesh.c3d.Info JUMPSTART/.
+  endif
+
+  if ( -e Mesh.mg.c3d ) then
+    mv -f Mesh.mg.c3d JUMPSTART/.
+  else if ( -e Mesh.R.c3d ) then
+    mv -f Mesh.R.c3d JUMPSTART/.
+  else if ( -e Mesh.c3d ) then
+    mv -f Mesh.c3d JUMPSTART/.
   endif
 endif
 
-if ( 1 == $error_on_finest ) then
-  set adjoint_on_finest = 1
-endif
+@ close_enough = 0
+@ max_nCells   = 7 * $max_cells2embed
 
-set is2D 
-set reorder = -reorder
-set mgprep = mgPrep
-if ( $mesh2d == 1 ) then
-  set is2D = '-mesh2d'
-  set reorder 
-  set mgprep = mgTree
-  set pmg
-  # force tm = 1 for 2d cases (best accuracy)
-  set tm = 1
+# check etol value
+set check = `echo $etol | awk '{ if ( $1 == $1 + 0 ) { print 0 } else { print 1 } }'`
+if ( $check ) then
+  echo "ERROR: etol = $etol must be a number"
+  goto ERROR
 endif
+set check = `echo $etol | awk '{ if ( $1 < 1.e-12 ) { print 1 } else { print 0 } }'`
+if ( $check ) then
+  echo 'WARNING: etol too small, setting to 1.e-12'
+  set etol = '1.e-12'
+endif
+set etol = `echo $etol | awk '{printf("%e",$1)}'`
 
-# check codes
-echo 'Using codes:'
-\ls -otr `which cubes`
-if ( $status != 0 ) then
-  echo "ERROR: cubes not found "
-  goto ERROR
-endif
-\ls -otr `which $mgprep`
-if ( $status != 0 ) then
-  echo "ERROR: $mgprep not found "
-  goto ERROR
-endif
-\ls -otr `which $flowCart`
-if ( $status != 0 ) then
-  echo "ERROR: $flowCart not found "
-  goto ERROR
-endif
-\ls -otr `which $xsensit`
-if ( $status != 0 ) then
-  echo "ERROR: $xsensit not found "
-  goto ERROR
-endif
-\ls -otr `which $adjointCart`
-if ( $status != 0 ) then
-  echo "ERROR: $adjointCart not found "
-  goto ERROR
-endif
-\ls -otr `which $adjointErrorEst`
-if ( $status != 0 ) then
-  echo "ERROR: $adjointErrorEst not found "
-  goto ERROR
-endif
-\ls -otr `which adapt`
-if ( $status != 0 ) then
-  echo "ERROR: adapt not found "
-  goto ERROR
-endif
-
-# report checksums
-set md5sum
-set md5opt
-which md5sum >& /dev/null
-if ( 0 == $status ) then
-  set md5sum = md5sum
-else
-  which gmd5sum >& /dev/null
+# check if safe to run
+if ( 1 != $adapt_restart ) then
+  # restart is off
+  ls -d adapt?? >& /dev/null
   if ( 0 == $status ) then
-    set md5sum = gmd5sum
+    echo 'adapt?? directories exist'
+    echo "Use '\rm -r adapt??' before starting a new run"
+    echo "For restarts, please use 'aero.csh restart'"
+    echo "For help, please use 'aero.csh help'"
+    goto ERROR
+  endif
+else
+  # restart is on
+  ls -d adapt?? >& /dev/null
+  if ( $status ) then
+    # there are no adapt dirs so start new
+    if ( -e Mesh.mg.c3d && -e Mesh.c3d.Info ) then
+      echo 'Detected Mesh.mg.c3d and Mesh.c3d.Info in run directory'
+      echo "To jumpstart from an existing mesh, please use 'aero.csh jumpstart'"
+      echo "For help, please use 'aero.csh help'"
+      echo "Use '\rm Mesh.mg.c3d Mesh.c3d.Info' before starting a new run"
+      goto ERROR
+    endif
+    @ adapt_restart = 0
+    echo 'Restart requested with no adapt directories, starting new run'
   else
-    which md5 >& /dev/null
-    if ( 0 == $status ) then
-      set md5sum = md5
-      set md5opt = '-r'
+    # there are adapt dirs
+    if ( -e AERO_FILE_ARCHIVE.txt ) then
+      # danger - are we trying to restart an archived run?
+      echo 'ERROR: Restart requested but AERO_FILE_ARCHIVE.txt is present'
+      echo '   ... This is a run archive, restart not possible'
+      echo '   ... To start a new run, please remove AERO_FILE_ARCHIVE.txt'
+      echo '   ... and adapt?? directories'
+      goto ERROR
+    else
+      if ( ! -d adapt00/FLOW ) then
+        # mesh in adapt00 may not be ready so start over
+        @ adapt_restart = 0
+        rm -rf adapt00 >& /dev/null
+      endif
     endif
   endif
 endif
 
-if ( $md5sum != '' ) then
-  echo
-  echo "$md5sum checksums:"
-  $md5sum $md5opt `which cubes`
-  $md5sum $md5opt `which $mgprep`
-  $md5sum $md5opt `which $flowCart`
-  $md5sum $md5opt `which $xsensit`
-  $md5sum $md5opt `which $adjointCart`  
-  $md5sum $md5opt `which $adjointErrorEst`  
-  $md5sum $md5opt `which adapt`
+set is2D
+set reorder = -reorder
+set mgprep = mgPrep
+if ( $mesh2d == 1 ) then
+  set is2D = '-mesh2d'
+  set reorder
+  set mgprep = mgTree
+  set pmg
+  # force tm = 1 for 2d cases (best accuracy)
+  @ tm      = 1
+  @ adj_TM1 = 1
+  @ max_nCells   = 4 * $max_cells2embed
 endif
 
-echo $CART3D >& /dev/null
-if ( $status != 0 ) then
-  echo "ERROR: CART3D env variable not found"
-  goto ERROR
+# use mgTree with cubes aniso flag
+if ($?C3D_ANISO_X) then
+  echo "C3D_ANISO_X is set to $C3D_ANISO_X -- using mgTree"
+  set mgprep = mgTree
 endif
-echo
-echo "CART3D env variable set to: " $CART3D
+
+date
+echo ''
 
 # show which aero.csh
-\ls -otr `which $0`
-echo ' '
+ls -otr `which $0`
+echo ''
+
+if ( $?CART3D ) then
+  echo 'CART3D env variable set to:' $CART3D
+else
+  echo 'ERROR: CART3D env variable not found'
+  goto ERROR
+endif
+if ( $?CART3D_ARCH ) then
+  echo 'CART3D_ARCH env variable set to:' $CART3D_ARCH
+else
+  echo 'WARNING: CART3D_ARCH env variable not found'
+endif
+echo ''
+
+# check codes
+ls -otr `which aero_codeCheck.csh` >& /dev/null
+if ( $status ) then
+  echo 'ERROR: aero_codeCheck.csh script not found'
+  echo '   ... Check that $CART3D/bin is in your path'
+  goto ERROR
+endif
+aero_codeCheck.csh $mgprep $flowCart $xsensit $adjointCart $adjointErrorEst
+if ( $status ) then
+  echo 'ERROR: aero_codeCheck.csh check failed'
+  goto ERROR
+endif
+
+# flowCart command with mpi
+if ( $?mpi_prefix ) then
+  set flowCart = "$mpi_prefix $flowCart"
+endif
+
+# timer: keep track of user time
+set timer
+set timeInfo = /dev/null
+if ( -e /usr/bin/time ) then
+  set timer = "/usr/bin/time -p"
+  set timeInfo = TIME
+else
+  echo "NOTE: /usr/bin/time not found, user time will not be reported"
+endif
+
+# check input array length
+if ( $n_adapt_cycles > $#ws_it ) then
+  @ last = $ws_it[$#ws_it]
+  @ len  = $#ws_it
+  while ( $len < $n_adapt_cycles )
+    set ws_it = ( $ws_it $last )
+    @ len ++
+  end
+  echo "Adjusted length of ws_it array to $#ws_it"
+  echo 'New array is ' $ws_it
+  echo ''
+endif
+
+if ( $n_adapt_cycles > $#apc ) then
+  set last = $apc[$#apc]
+  @ len  = $#apc
+  while ( $len < $n_adapt_cycles )
+    set apc = ( $apc $last )
+    @ len ++
+  end
+  echo "Adjusted length of apc array to $#apc"
+  echo 'New array is ' $apc
+  echo ''
+endif
+
+if ( 1 == $auto_growth ) then
+  unset mesh_growth
+  unset ath
+else
+  if ( $?mesh_growth && $?ath ) then
+    echo 'ERROR: Detected both mesh_growth and ath arrays'
+    echo '   ... Please pick one and unset the other'
+    goto ERROR
+  endif
+  if ( $?mesh_growth ) then
+    if ( $n_adapt_cycles > $#mesh_growth ) then
+      set last = $mesh_growth[$#mesh_growth]
+      @ len  = $#mesh_growth
+      while ( $len < $n_adapt_cycles )
+        set mesh_growth = ( $mesh_growth $last )
+        @ len ++
+      end
+      echo "Adjusted length of mesh_growth array to $#mesh_growth"
+      echo 'New array is' $mesh_growth
+      echo ''
+    endif
+  else if ( $?ath ) then
+    if ( $n_adapt_cycles > $#ath ) then
+      set last = $ath[$#ath]
+      @ len  = $#ath
+      while ( $len < $n_adapt_cycles )
+        set ath = ( $ath $last )
+        @ len ++
+      end
+      echo "Adjusted length of ath array to $#ath"
+      echo 'New array is' $ath
+      echo ''
+    endif
+  endif
+endif
 
 # adaptation exit flag
-set error_ok = 0
-
-# smallest allowable etol when using relative errors
-set etol_cutoff = $etol_min
+@ error_ok = 0
 
 if ( "$mg_gs_ad" == '-mg' ) then
   set ad_multigrid = 'multigrid'
@@ -404,149 +664,81 @@ else
   set fc_multigrid = 'grid-sequencing'
 endif
 
+# Warn if by the last adapt cycle we will not get to the full mg_levs
+if ( $mg_init < 1 ) then
+  echo "WARNING: mg_init $mg_init is less than 1, resetting to 1"
+  @ mg_init = 1
+else if ( $mg_init > $mg_fc ) then
+  echo "WARNING: mg_init $mg_init exceeds mg_fc $mg_fc, resetting to $mg_fc"
+  @ mg_init = $mg_fc
+endif
+@ mg_delta = $mg_fc - $mg_init
+if ( $n_adapt_cycles > 0 && $n_adapt_cycles < $mg_delta ) then
+  echo "WARNING: Cannot get from $mg_init mg cycles up to $mg_fc in only $n_adapt_cycles adapt cycles"
+  echo "     ... Consider increasing mg_init in $0"
+  echo ''
+endif
+unset mg_delta
+
 # use Morton order whenever mgTree is used
 set sfc
-if ( "$mgprep" == 'mgTree' ) then
+if ( $mgprep == 'mgTree' ) then
   set sfc = '-sfc M'
 endif
 
+# set return codes for error traps
+# adapt return code
+@ ZERO_TAGGED_HEXES = 4
+
+# adjointErrorEst return code
+@ ERROR_TOL_OK = 2
+
+# set flowCart restart flag to null
+set fc_restart
+
+# mg_start used for initial multigrid levels
+set mg_start
+
 # buffer limiter in cut-cells
 # if tm = 0, set blcc to nothing
-# if tm = 1, strongly recommend using buffLimCC for stability 
+# if tm = 1, strongly recommend using buffLimCC for stability
 # disabled 08.11.20 - see if we need it later
-# if ( $tm == 0 ) then 
+# if ( $tm == 0 ) then
 set blcc
 # else
 #    set blcc = -buffLimCC
 # endif
 
-# clean-up STOP file
-if ( -e ./STOP ) then
-  echo "Removing STOP"
-  \rm -f STOP
-endif
+# clean-up
+rm -f results.dat results_*.dat fun_con.dat fun_con_*.dat >& /dev/null
+rm -f all_outputs*.dat STOP >& /dev/null
+rm -f AERO_FILE_ARCHIVE.txt case_check*.png xmgr.batch >& /dev/null
 
-# clean-up ARCHIVE file
-if ( -e ./AERO_FILE_ARCHIVE.txt ) then
-  echo "Removing AERO_FILE_ARCHIVE.txt"
-  \rm -f AERO_FILE_ARCHIVE.txt
-endif
-
-# ----------------------------------
-# restarts
-set x               = 0
-set xx              = 00
-set dirname         = adapt00
-set previous
-set xm1
-
-if ( 1 == $adapt_restart ) then
-
-  if ( -e ADAPT/ADAPT_RESTART ) then
-    set x = `cat ADAPT/ADAPT_RESTART | awk '{print $1}'`
-    
-    if ( 0 < $x ) then
-      @ xm1 = $x - 1
-  
-      if ( $x < 10 ) then
-        set dirname  = adapt0${x}
-        set xx       = 0${x}
-      else
-        set dirname  = adapt${x}
-        set xx       = ${x}
-      endif
-
-      if ( $xm1 < 10 ) then
-        set previous = adapt0${xm1}
-      else
-        set previous = adapt${xm1}
-      endif
-      
-    endif
-  endif
-  
-  # cleanup EMBED
-  cd EMBED
-  if ( -l Mesh.mg.c3d ) then
-    unlink Mesh.mg.c3d >& /dev/null
-  endif
-  \rm -f Mesh.c3d.Info cutPlanesADJ.plt *.${xx}.* >& /dev/null
-  \rm -f adaptedMesh.R.c3d postAdapt.ckpt aPlanes.dat >& /dev/null
-  cd ../
-
-  # cleanup ADAPT
-  \rm -f ADAPT/Mesh.c3d.Info ADAPT/*.${xx}.* ADAPT/adapt.stats >& /dev/null
-endif
-# ----------------------------------
-
-if ( -l ./BEST && ( 1 != $adapt_restart ) ) then
-  echo "Unlinking BEST"
+if ( -l ./BEST ) then
+  echo 'Unlinking BEST'
+  echo ''
   unlink BEST
 endif
 
-if ( -d ./BEST && ( 1 != $adapt_restart ) ) then
-  echo "BEST should not be a directory, please remove it and try again"
+if ( -d ./BEST ) then
+  echo 'ERROR: BEST should not be a directory, please remove it and try again'
   goto ERROR
 endif
 
-set mydate = `date`
-
-# ------------------------------
-# functional convergence summary
-set fun_con = 'fun_con.dat'
-if ( -e $fun_con && 0 == $adapt_restart ) then
-  \rm -f $fun_con
+# Check for presence of the surface triangulation
+if (! -e Components.i.tri ) then
+  echo 'ERROR: Missing Components.i.tri'
+  goto ERROR
 endif
-if ( 0 == $adapt_restart ) then
-  echo "# Functional convergence" >>! $fun_con
-  echo "#" $mydate >>! $fun_con
-  echo "# Cycle   nCells   Functional    Avg. Fun. (window=$avg_window)" >>! $fun_con
-endif
-# ------------------------------
-
-# ------------------------------
-# timer: keep track of user time
-set timer
-set timeInfo = /dev/null
-set flowCartTime        = 0
-set xsensitTime         = 0
-set adjointCartTime     = 0
-set embedTime           = 0
-set adjointErrorEstTime = 0
-set adaptTime           = 0
-if ( -e /usr/bin/time ) then
-  set timer = "/usr/bin/time -p"
-  set timeInfo = TIME
-  if ( -e $time_file && 1 == $adapt_restart ) then
-    echo "# restart on " $mydate >> $time_file
-  else
-    echo "# Output of USER time from $timer" >! $time_file
-    echo "#" $mydate >> $time_file
-    echo "# Time rounded down to nearest second" >> $time_file
-    env | grep OMP_NUM_THREADS >& /dev/null
-    if ( $status == 0 ) then
-      echo "# For WALLCLOCK time, divide by $OMP_NUM_THREADS CPU(s) except Embed and Adapt times " >> $time_file
-    endif
-    echo "# cycle flowCart xsensit adjointCart embed adjointErrorEst adapt" >> $time_file
-  endif
-else
-  echo "NOTE: /usr/bin/time not found, user time will not be reported"
-  if ( -e $time_file ) then
-    \rm -f $time_file 
-  endif
-  set time_file = $timeInfo
-endif
-# ------------------------------
 
 # set ADAPT directory, this is where new meshes are generated
 if ( ! -d ADAPT ) then
-  mkdir -m 0700 -p ADAPT
+  mkdir  -p ADAPT
 endif
 cd ADAPT
-echo "Preparing directory ADAPT"
-\rm -rf XREF_* >& /dev/null
-if ( -e Components.i.tri && 1 != $adapt_restart ) then
-  \rm -f *.*
+rm -rf XREF_* >& /dev/null
+if (0 == $adapt_restart ) then
+  rm -f *.* >& /dev/null
 endif
 ln -sf ../Components.i.tri
 set prespec
@@ -554,183 +746,344 @@ if ( ( 1 == $use_preSpec ) && -e ../preSpec.c3d.cntl) then
   ln -sf ../preSpec.c3d.cntl
   set prespec = '-pre preSpec.c3d.cntl'
 endif
-cd ../  # back up to top level
+cd ..
 
 # set EMBED directory, this is where embedded meshes are generated
 if ( ! -d EMBED ) then
-  mkdir -m 0700 -p EMBED
+  mkdir  -p EMBED
 endif
 cd EMBED
-echo "Preparing directory EMBED"
-if ( 1 != $adapt_restart ) then
-  \rm -f *.* >& /dev/null
+if ( 0 == $adapt_restart ) then
+  rm -f *.* >& /dev/null
+  rm -rf Error_in_* >& /dev/null
 endif
-ln -sf ../Components.i.tri     
+ln -sf ../Components.i.tri
 ln -sf ../Config.xml
-if ( -e ../vortexInfo.dat ) then
-  ln -sf ../vortexInfo.dat
-endif
-if ( -e ../earthBL.Info.dat ) then
-  ln -sf ../earthBL.Info.dat
-endif
-cd ../ # back up to top level
+cd ..
 
-# set return codes for error traps
-# adapt return code
-set ZERO_TAGGED_HEXES = 4
+@ x = -1
+@ nCells = 0
 
-# adjointErrorEst return code
-set ERROR_TOL_OK = 2
-
-# set flowCart restart flag to null
-set fc_restart
-
-# mg_start used for initial multigrid levels
-set mg_start 
+set xx      = 00
+set dirname = adapt00
+set dirnext = adapt00
+set dirback = undef
 
 # initialize variables for restart
 if ( 1 == $adapt_restart ) then
-  echo "This is a RESTART run from $dirname"
+  set rdir = `ls -1d adapt?? | tail -1`
+  echo "This is a RESTART run from ${rdir}"
 
-  set nCells = 0
-  
-  if ( $xm1 ) then
-    if ( $xm1 < 10 ) then
-      set xxm1 = 0${xm1}
-    else
-      set xxm1 = ${xm1}
-    endif
-    set nCells = `grep "totNumHexes     =" ADAPT/adapt.${xxm1}.out | awk '{print $3}'`
-  else
-    if ( "$dirname" == 'adapt00' && -e ${dirname}/cart3d.out ) then
-      set nCells = `grep "  hex cells  is:" ${dirname}/cart3d.out | awk '{print $8}'`
-    endif
+  # Start at adapt00 -- will reprocess all folders
+  set file = 'adapt00/FLOW/functional.dat'
+  if ( -e $file ) then
+    set nCells = `grep "nCells (total number of control volumes):" $file | tail -1 | awk '{printf("%d",$8)}'`
   endif
-  
-  set fun_avg = `tail -1 fun_con.dat | awk '{print $4}'`
 
+  # how many adapt dirs are there?
+  set nad = `ls -1d adapt?? | wc -l`
+  @ nad --
+
+  # prepare EMBED for restart
+  cd EMBED
+  # how many adapt files are there?
+  set naf = 0
+  ls -1 adapt.??.out >& /dev/null
+  if ( ! $status ) then
+    set naf = `ls -1 adapt.??.out | wc -l`
+  endif
+
+  if ( $naf > $nad ) then
+    while ( $nad != $naf )
+      set rx
+      if ( $nad < 10 ) then
+        set rx = 0${nad}
+      else
+        set rx = ${nad}
+      endif
+
+      rm -f *.${rx}.* >& /dev/null
+      rm -f ../ADAPT/*.${rx}.* >& /dev/null
+
+      ls -d Error_in_* >& /dev/null
+      if ( $status == 0 ) then
+        foreach ed ( Error_in_* )
+          if (! -d $ed ) then
+            continue
+          endif
+          rm -f ${ed}/*.${rx}.* >& /dev/null
+        end
+      endif
+
+      @ nad += 1
+    end
+  endif
+  # back to run directory
+  cd ..
+
+  if ( -e ADAPT/adaptedMesh.R.c3d ) then
+    rm -f adaptedMesh.R.c3d >& /dev/null
+  endif
+
+  set restartON
+  echo ''
+else
+  # not a restart
+  mkdir  -p $dirname
   cd $dirname
 
-  # check if flow solve successfully completed 
-  if ( ! -e ADAPT_FLOW ) then
-    # we must have a valid restart file
-    if ( 1 == use_warm_starts && ! -e Restart.file ) then
-      echo "ERROR: Cannot find Restart.file"
-      goto ERROR
-    endif
-    # cleanup
-    \rm -f *.dat check* *.plt 
-    if ( 1 == $use_warm_starts ) then
-      cp ../$previous/*.dat .
-      \rm -f loads*.dat *ADJ.dat
-      if ( ! -e history.dat ) then
-        echo "ERROR: Cannot find history.dat file"
-        goto ERROR
-      endif
-      # flow solve not complete so we increase cycles for warm starts
-      # history file is from previous directory
-      set it_fc = `tail -1 history.dat | awk '{if ("#" != $1) {print $1} else {print 0}}'`
-      if ( 0 == $it_fc ) then
-        echo "ERROR: Cannot parse history.dat file"
-        goto ERROR
-      endif
-      @ it_fc += $ws_it[$x]
-    endif
-  else # ADAPT_FLOW present
-    # set it_fc to completed cycles
-    if ( 1 == $use_warm_starts ) then
-      set it_fc = `tail -1 history.dat | awk '{if ("#" != $1) {print $1} else {print 0}}'`
-      if ( 0 == $it_fc ) then
-        echo "ERROR: Cannot parse history.dat file"
-        goto ERROR
-      endif
-    endif
-  endif # end ADAPT_FLOW
-else # not a restart    
-  mkdir -m 0700 -p $dirname
-  cd $dirname
-
-  ln -s ../Config.xml 
+  # prepare generation of initial mesh
   ln -s ../Components.i.tri
   ln -s ../input.c3d
-
-  # vortex farfield input file
-  if ( -e ../vortexInfo.dat ) then
-    ln -s ../vortexInfo.dat
-  endif
-  # earth bl input file
-  if ( -e ../earthBL.Info.dat ) then
-    ln -s ../earthBL.Info.dat
-  endif
-  
-  # used to ln -s but now use cp to handle steering properly
-  cp ../input.cntl .
   if ( ( 1 == $use_preSpec ) && -e ../preSpec.c3d.cntl) then
     ln -s ../preSpec.c3d.cntl
   endif
 
-  # inverse design using target cp
-  if ( -e ../target.triq ) then
-    ln -s ../target.triq
+  # handle remesh option
+  set remesh
+  if ( 1 == $use_remesh ) then
+    if ( -e ../refMesh.mg.c3d && -e ../refMesh.c3d.Info  ) then
+      echo 'Remesh option active on initial mesh'
+      echo 'Relaxing angle criterion to 20 (-a 20)'
+      ln -s ../refMesh.mg.c3d
+      ln -s ../refMesh.c3d.Info
+      set remesh = '-remesh'
+      set cubes_a = 20
+    else
+      echo 'WARNING: remesh option requested but refMesh files missing'
+      echo '         ... ignoring remesh request'
+    endif
   endif
 
-  # inverse design using off-body line sensors
-  \ls -1 ../target_*.dat >& /dev/null
-  if ( $status == 0 ) then
-    foreach target ( ../target_*.dat )
-      ln -s $target
-    end
-  endif
+  # copy input file in case we have Steering_Info
+  cp ../input.cntl .
 
   if ( 0 == $adapt_jumpstart ) then
-    echo "Building initial mesh"
+    echo 'Building initial mesh'
+    echo ''
+    if (! -e input.c3d ) then
+      echo 'ERROR: Missing input.c3d'
+      cd ..
+      goto ERROR
+    endif
     if ( $cubes_b < 2 ) then
       set cubes_b = 2
     endif
-    cubes -v -verify -a $cubes_a -maxR $maxR -b $cubes_b $reorder $is2D $prespec -no_est $Internal >> cntl.out
+
+    set flags = "-v -quiet -verify -no_est $reorder $is2D"
+    echo "cubes $flags -a $cubes_a -maxR $maxR -b $cubes_b $prespec $Internal $remesh" >> cart3d.out
+    cubes $flags -a $cubes_a -maxR $maxR -b $cubes_b $prespec $Internal $remesh >> cart3d.out
     if ($status != 0) then
-      echo "==> CUBES failed"
+      echo 'ERROR: CUBES failed in ' `pwd`
+      if ( -e cart3d.out ) then
+        grep 'ERROR:' cart3d.out
+        grep 'ATTENTION:' cart3d.out
+      endif
+      cd ..
       goto ERROR
     endif
-    set nCells = `grep "  hex cells  is:" cntl.out | awk '{print $8}'`
+    set nCells = `grep "  hex cells  is:" cart3d.out | awk '{print $8}'`
+    # check for timeout warnings
+    grep ' until expiration' cart3d.out >& /dev/null
+    if ( 0 == $status ) then
+      echo 'cubes near expiration date:'
+      grep ' until expiration' cart3d.out
+    endif
   else
-    echo "Jumpstarting from a given initial mesh"
-    if ( -e ../Mesh.c3d.Info ) then
-      \mv -f ../Mesh.c3d.Info .
+    echo 'Jumpstarting from a given mesh'
+    echo ''
+    if ( -e ../JUMPSTART/Mesh.c3d.Info ) then
+      cp -f ../JUMPSTART/Mesh.c3d.Info .
     else
-      echo "ERROR: Missing Mesh.c3d.Info"
+      echo 'ERROR: Missing Mesh.c3d.Info for jumpstart'
+      echo '   ... Try ./aero.csh help'
+      cd ..
       goto ERROR
     endif
-    if ( -e ../Mesh.mg.c3d ) then
-      \mv -f ../Mesh.mg.c3d Mesh.R.c3d
-    else if ( -e ../Mesh.R.c3d ) then
-      \mv -f ../Mesh.R.c3d Mesh.R.c3d
-    else if ( -e ../Mesh.c3d ) then
-      \mv -f ../Mesh.c3d Mesh.c3d
+    if ( -e ../JUMPSTART/Mesh.mg.c3d ) then
+      cp -f ../JUMPSTART/Mesh.mg.c3d Mesh.R.c3d
+    else if ( -e ../JUMPSTART/Mesh.R.c3d ) then
+      cp -f ../JUMPSTART/Mesh.R.c3d Mesh.R.c3d
+    else if ( -e ../JUMPSTART/Mesh.c3d ) then
+      cp -f ../JUMPSTART/Mesh.c3d Mesh.c3d
     else
-      echo "ERROR: Missing Mesh.*.c3d file"
+      echo 'ERROR: Missing Mesh.*.c3d file for jumpstart'
+      echo '   ... Try ./aero.csh help'
+      cd ..
       goto ERROR
     endif
-    set nCells = 0
+  endif
+
+  cd ..
+
+  if ( -e user_time.dat ) then
+    rm -f user_time.dat
   endif
 endif
 
-echo "  "
-echo " Working in directory" $dirname
-if ( $nCells > 0 ) then
-  echo " Mesh contains $nCells hexes"
+# Find maximum number of refinements using eq. 3.5 on pg. 84 in VKI notes of
+# Aftosmis.
+@ maxDiv = `grep " # initial mesh divisions" adapt00/Mesh.c3d.Info | awk '{ if ( $1 < $2 ) { $1 = $2; } if ( $1 < $3 ) { $1 = $3; } print $1}'`
+# maxRef21 indicates the deepest possible refinement due to the 21-bit limit
+@ maxRef21 = `echo $maxDiv | awk '{maxRef21 = 20.9999993121 - log($1-1)/log(2.); print int( maxRef21 ) }'`
+unset maxDiv
+# Track refinement level to make sure we do not exceed max allowed in 21 bits
+# or the user-requested max-depth. Implemented suggestion / bug fix by GRA to
+# track user specified max_ref_level separately from the 21 bit limit.
+@ maxRefLev = `grep " # maxRef" adapt00/Mesh.c3d.Info  | awk '{print int( $1 )}'`
+echo "Refinement level (maxRef) of initial mesh = $maxRefLev"
+if ( $max_ref_level < $maxRef21 ) then
+  echo "User-specified refinement level limit of $max_ref_level is active"
+else
+  echo "Max. number of refinements allowed = $maxRef21"
 endif
+echo ''
+
+# Set failsafe run strategy in case adjoint diverges. Keywords are FLOW, TM0,
+# PMG and FIRST_ORDER. These correspond to names of directories that hold the
+# best converged flow solution.  The FLOW directory always holds the default
+# flow solution (defined by user settings). The adjoints array indicates
+# whether an adjoint solution should be attempted against the given flow
+# solution, e.g. on may wish to skip trying to solve the adjoint against a tm=1
+# flow state in challenging cases.
+
+set failsafe = ( FLOW )
+set adjoints = ( 1 )
+
+if ( 1 == $tm ) then # tm=1 mode, highest accuracy
+  set failsafe = ( $failsafe TM0 )
+  if ( 0 == $adj_TM1 ) then
+    set adjoints = ( 0 1 )
+  else
+    set adjoints = ( 1 1 )
+  endif
+endif
+
+if ( "$pmg" != '-pmg' ) then
+  # pmg has not been selected by the user
+  set failsafe = ( $failsafe PMG )
+  set adjoints = ( $adjoints 1 )
+endif
+
+if ( 0 == $adj_first_order ) then
+  set failsafe = ( $failsafe FIRST_ORDER )
+  set adjoints = ( $adjoints 1 )
+else
+  set failsafe = ( FLOW FIRST_ORDER )
+  set adjoints = ( 0    1 )
+endif
+
+echo 'Adjoint failsafe strategy:' $failsafe '[' $adjoints ']'
+
+# check if we are refining the mesh multiple times and do sanity check on how
+# many times
+if ( $final_mesh_xref > 0 ) then
+  echo ''
+  echo "User requested $final_mesh_xref extra refinements on final mesh"
+  set MAX_XREF = 3
+  if ( $final_mesh_xref > $MAX_XREF ) then
+    echo "NOTE: $final_mesh_xref exceeds max allowed of $MAX_XREF, resetting to $MAX_XREF"
+    @ final_mesh_xref = $MAX_XREF
+  endif
+  unset MAX_XREF
+endif
+
+@ tm_hold = $tm
 
 # main loop over adaptation cycles
 # exit set with break statements
 while ( 1 )
 
-  if ( 1 == $use_warm_starts && $x > 0 ) then
-    set fc_restart = '-restart'
-  endif         
+  # update counters
+  @ x ++
+  @ xm1 = $x - 1
+  @ xp1 = $x + 1
+
+  if ( $x < 10 ) then
+    set xx = 0${x}
+  else
+    set xx = ${x}
+  endif
+
+  # create next analysis directory and setup files
+  set dirback = $dirname
+  set dirname  = $dirnext
+  if ( $xp1 < 10 ) then
+    set dirnext = adapt0${xp1}
+  else
+    set dirnext = adapt${xp1}
+  endif
+
+  echo ''
+  echo 'Working in directory' $dirname
+  if ( $nCells > 0 ) then
+    # comma delimited numbers, much easier to read, thanks DLR
+    env LC_NUMERIC="en_US.UTF-8" printf "Mesh contains %'d hexes\n" $nCells
+  endif
+
+  if (! -d $dirname ) then
+    mkdir  $dirname
+    if ( 0 != $status ) then
+      echo "ERROR: Failed to create $dirname"
+      goto ERROR
+    endif
+  endif
+
+  cd $dirname
+
+  if ( 1 == $adapt_restart ) then
+    # short circuit the current directory if the mesh is already staged in the next directory
+    if ( -e ../${dirnext}/Mesh.mg.c3d && ( ! -e ../${dirnext}/Mesh.R.c3d && ! -e ../${dirnext}/Mesh.c3d ) ) then
+      # Check if we are close to cell limit on the next mesh. The adapt.??.out
+      # file may not exist if there were Xrefs, in which case it is ok to skip
+      # the embed-limit checking anyway.
+      if ( -e ../ADAPT/adapt.${xx}.out ) then
+        set nCells = `grep "totNumHexes     =" ../ADAPT/adapt.${xx}.out | awk '{print $3}'`
+        if ( `echo $max_cells2embed | awk '{ if ( '$nCells' * '$min_growth' > $1 ) {print 1} else {print 0}}'` ) then
+          @ close_enough += 1
+        endif
+      endif
+      if ( -l ../BEST ) then
+        unlink ../BEST
+      endif
+      ln -s $dirname ../BEST
+
+      # Try to find the actual averaging window used by flowCart
+      set actual_window = `grep "Tecplot stats file" FLOW/cart3d.out | tr '=)' ' ' | awk '{print $NF}'`
+      if ($status) then
+        set actual_window = $avg_window
+      else if ("" == "$actual_window") then
+        set actual_window = $avg_window
+      endif
+
+      aero_funCon.csh $x $actual_window
+
+      cd ..
+      echo "Restart OK, going to $dirnext"
+      continue
+    else if ( -d ../$dirnext ) then
+      # restart state of dirnext is uncertain, redo it
+      echo "Restart OK, resetting $dirnext"
+      rm -rf ../$dirnext >& /dev/null
+    endif
+  endif
+
+  # bring in adapted mesh
+  if ( -e ../ADAPT/adaptedMesh.R.c3d ) then
+    if ( $mesh2d ) then
+      mv ../ADAPT/adaptedMesh.R.c3d Mesh.c3d
+    else
+      mv ../ADAPT/adaptedMesh.R.c3d Mesh.R.c3d
+    endif
+  endif
+  if ( -e ../ADAPT/Mesh.c3d.Info ) then
+    mv ../ADAPT/Mesh.c3d.Info .
+  endif
+
+  # update maxRefLev
+  @ maxRefLev = `grep " # maxRef" Mesh.c3d.Info | awk '{print int( $1 )}'`
 
   # on coarse meshes run fewer multigrid levels for better convergence
-  # $x starts at zero ... let's try mg 2 on initial mesh
   @ mg_start = $x + $mg_init
   if ( $mg_start < $mg_fc && $n_adapt_cycles > 0 ) then
     set mg_levs = $mg_start
@@ -738,224 +1091,521 @@ while ( 1 )
     set mg_levs = $mg_fc
   endif
 
-  # ADAPT_FLOW is used to flag adaptation restarts. The flag indicates if the
-  # working directory contains a valid flow solution
-  if ( ! -e ADAPT_FLOW ) then
+  # prepare mg meshes: generate only the required number of levels
+  if ( ! -e Mesh.mg.c3d ) then # restart check, skip if done
+    while ( $mg_levs > 1 )
+      echo "$mgprep -n $mg_levs -verifyInput $pmg $verb" >> cart3d.out
+      $mgprep -n $mg_levs -verifyInput $pmg $verb >> cart3d.out
+      if ( 0 == $status ) then
+        break
+      else
+        echo "==> $mgprep failed trying to make $mg_levs levels"
+        @ mg_levs -= 1
+        echo "==> Trying again with $mg_levs levels"
+      endif
+    end
 
-    # prepare mg meshes: generate only the required number of levels
-    if ( ! -e Mesh.mg.c3d ) then # restart check, skip if done
-      while ( $mg_levs > 1 )
-        echo "$mgprep -n $mg_levs -verifyInput $pmg" >> cntl.out
-        $mgprep -n $mg_levs -verifyInput $pmg >> cntl.out
-        if ( $status == 0 ) then
+    if ( $mg_levs == 1 ) then
+      echo "==> Caution: multigrid is not active"
+      if ( $mesh2d ) then
+        mv Mesh.c3d Mesh.mg.c3d
+      else
+        mv Mesh.R.c3d Mesh.mg.c3d
+      endif
+    endif
+  else
+    # mesh exists, make sure MG levels are correct
+    if ( ! -e cart3d.out ) then
+      echo "ERROR: missing cart3d.out in $dirname"
+      goto ERROR
+    endif
+    # check how many times mgprep was called
+    if ( `grep $mgprep cart3d.out | wc -l` > 1 ) then
+      # find number of mesh levels
+      @ mg_levs -= 1
+      while ( $mg_levs > 1 ) then
+        grep $mgprep cart3d.out | tail -1 | grep "\-n $mg_levs" >& /dev/null
+        if ( 0 == $status ) then
           break
         else
-          echo "==> $mgprep failed trying to make $mg_levs levels"
           @ mg_levs -= 1
-          echo "==> Trying again with $mg_levs levels"
         endif
       end
-      
-      if ( $mg_levs == 1 ) then
-        echo "==> Caution: multigrid is not active"
-        if ( $mesh2d ) then
-          mv Mesh.c3d Mesh.mg.c3d
-        else 
-          mv Mesh.R.c3d Mesh.mg.c3d
+    endif
+  endif # Mesh.mg.c3d
+  @ mg_levs_hold = $mg_levs
+
+  # cleanup
+  rm -f Mesh.c3d >& /dev/null
+  rm -f Mesh.R.c3d >& /dev/null
+
+  if ( ! -e input.cntl ) then
+    # copy input.cntl to bring over any steering updates, e.g. TargetCL
+    if ( -e ../input.new.cntl ) then
+      echo "Switching to new input.cntl file"
+      mv ../input.new.cntl input.cntl
+    else
+      cp ../$dirback/FLOW/input.cntl .
+    endif
+  endif
+
+  # Determine ahead of time whether this is certain to be the last or
+  # penultimate mesh.
+  set onbest
+  set onbm1
+  if ( $n_adapt_cycles == $x || 1 == $error_ok || $maxRefLev == $maxRef21 || 2 == $close_enough ) then
+    set onbest = '-best'
+  else if ( $n_adapt_cycles == $xp1 || 1 == $close_enough ) then
+    set onbm1 = '-bm1'
+  endif
+
+  # prepare flow and adjoint directories
+  if ( -e ../Functionals.xml ) then
+    aero_rmFun.pl
+    set noerr
+    set r_on
+    if ( $?restartON ) then
+      set r_on = '-r'
+      unset restartON
+    endif
+    # suppress error estimates if at maxRef due to 21-bit limit (thanks GRA)
+    if ( $maxRefLev == $maxRef21 ) then
+      set noerr = '-no_error'
+      echo "WARNING: cannot compute error estimates since 21-bit maxRef limit reached"
+    endif
+    if ( $?debug_verbose ) then
+      echo "  aero_prepFun.pl $onbest $onbm1 $r_on $noerr"
+    endif
+    aero_prepFun.pl $onbest $onbm1 $r_on $noerr
+    if ( $status ) then
+      echo 'ERROR: aero_prepFun.pl failed'
+      goto ERROR
+    endif
+  else
+    # no functional file, set adjoint directory
+    set adj_dir = AD_A_J
+    if ( "$onbest" == '-best' ) then
+      if ( 1 == $error_on_finest ) then
+        set adj_dir = AD_E_J
+        if ( $maxRefLev == $maxRef21 ) then
+          echo "WARNING: cannot compute error estimates since 21-bit maxRef limit reached"
+          unset adj_dir
+        endif
+      else
+        unset adj_dir
+      endif
+    endif
+
+    # correct directory labels if restarting
+    if ( $?restartON && $?adj_dir ) then
+      if ( "$onbest" != '-best' ) then
+        # not on best
+        if ( -d AD_E_J ) then
+          mv AD_E_J $adj_dir
         endif
       endif
-    endif # Mesh.mg.c3d
-    
-    echo "   Using $mg_levs of $mg_fc levels in flowCart $fc_multigrid"
-
-    # cleanup
-    if ( -e Mesh.c3d ) then
-      \rm -f Mesh.c3d
+      unset restartON
     endif
 
-    if ( -e Mesh.R.c3d ) then
-      \rm -f Mesh.R.c3d
+    # make new AD dir
+    if ( $?adj_dir ) then
+      if ( ! -d $adj_dir ) then
+        mkdir  $adj_dir
+      endif
     endif
-    
-    ( $timer $flowCart $verb -his -N $it_fc -T $binaryIO -clic $mg_gs_fc $mg_levs -limiter $limiter -tm $tm -cfl $cfl $y_is_spanwise $fc_restart $fmg $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
-    set exit_status = $status
-    if ( 0 != $exit_status ) then
-      if ( 253 == $exit_status) then   
-        echo "ERROR: file parsing error in flowCart "
-        echo "       check flowCart output in $dirname ... exiting now"
+    unset adj_dir
+  endif
+
+  # set exit point: 0 no exit, 1 before flow solve, 2 before adjoint, 3 after
+  # adjoint, 4 after error analysis
+  @ exit_point = 0
+  if ( "$onbest" == '-best' ) then
+    # default exit point is right after flow solve
+    @ exit_point = 2
+    if ( 1 == $skip_finest ) then
+      # exit before flow solve
+      @ exit_point = 1
+    else
+      ls -d AD_G_* >& /dev/null
+      if ( 0 == $status ) then
+        # exit after adjoint solve
+        @ exit_point = 3
+      endif
+      ls -d AD_E*_* >& /dev/null
+      if ( 0 == $status ) then
+        # exit after error analysis
+        @ exit_point = 4
+      endif
+      ls -d AD_A*_* >& /dev/null
+      if ( 0 == $status ) then
+        echo '  WARNING: there should be no AD_A*_* dirs'
+      endif
+    endif
+  endif
+
+  @ tm = $tm_hold
+  # main flow solve
+  foreach fs ( $failsafe )
+    if ( ! -d $fs ) then
+      mkdir  $fs
+      if ( 0 != $status ) then
+        echo "ERROR: Failed to create $fs"
         goto ERROR
       endif
-      if ( 0 == $mesh2d ) then
-        # check if using robust mode
-        set isRobust = `cat input.cntl | awk 'BEGIN{ n=0; ng=0; } { if ("RK"==$1) { n++; if ("1"==$3) {ng++;} } } END{ if (n==ng) { print 1 } else { print 0 } }'`
-        # try converging in robust mode if standard input file
-        if ( 0 == $isRobust ) then 
-          echo "==> $flowCart warm-start failed with status $exit_status ... trying robust mode"
-          # cleanup failed run
-          \rm -f check.* checkDT.* *.dat
+    endif
 
-          if ( $dirname == 'adapt00' ) then
-            # inverse design using off-body line sensors
-            \ls -1 ../target_*.dat >& /dev/null
-            if ( $status == 0 ) then
-              foreach target ( ../target_*.dat )
-                ln -s $target
-              end
+    cd $fs
+
+    # DONE flag indicates good flow solution already done
+    if ( -e DONE ) then
+      echo "  Flow done"
+      # re-initialize if mgprep failed
+      @ mg_levs = `cat DONE | awk '{print $1}'`
+    else
+      # setup files for warm-starts
+      if ( 1 == $use_warm_starts && $x > 0 ) then
+        set fc_restart = '-restart'
+        @ itf = $ws_it[$x]
+
+        if ( -e ../../ADAPT/postAdapt.ckpt ) then
+          mv ../../ADAPT/postAdapt.ckpt Restart.file
+        endif
+        if ( FLOW == $fs ) then
+          set file = ( forces.dat history.dat moments.dat functional.dat )
+          foreach f ( `grep -l "# Cart3D CLIC2 convergence monitor" ../../$dirback/FLOW/*.dat` $file )
+            if ( -e ../../$dirback/FLOW/$f ) then
+              cp -f ../../$dirback/FLOW/$f .
             endif
-          else
-            \cp -f ../$previous/*.dat .
-            \rm -f loads*.dat *ADJ*.dat
-          endif
-          
-          # build robust-mode cntl file
-          mv input.cntl input.not_robust.cntl
-          awk '{if ("RK"==$1){print $1,"  ",$2,"  ",1}else{print $0}}' \
-              input.not_robust.cntl > input.cntl            
-          ( $timer $flowCart $verb -his -N $it_fc -T $binaryIO -clic $mg_gs_fc $mg_levs -limiter $limiter -tm 0 -cfl $cfl $y_is_spanwise $fc_restart $fmg $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
-          set exit_status = $status
+          end
         endif
-        
-        if ( 0 != $exit_status ) then
-          echo "==> $flowCart failed with status $exit_status ... trying cold start with CFL $cflmin"
-          set gs_it = 2
-          @ gs_it *= $it_ad
-          ( $timer $flowCart $verb -his -N $gs_it -T $binaryIO -clic $mg_gs_fc $mg_levs -limiter $limiter -tm 0 -cfl $cflmin $y_is_spanwise -no_fmg -buffLim $subcell >> cntl.out ) >&! $timeInfo
-          set exit_status = $status
-        endif
-      else # 2D case
-        echo "==> $flowCart warm-start failed with status $exit_status ... trying cold start with CFL $cflmin"
-        ( $timer $flowCart $verb -his -N $it_ad -T $binaryIO -clic $mg_gs_fc $mg_levs -limiter $limiter -tm $tm -cfl $cflmin $y_is_spanwise $subcell >> cntl.out ) >&! $timeInfo
-        set exit_status = $status
+      else   # Cycle 0 or cold-start -- use fixed it_fc
+        @ itf = $it_fc
       endif
-      if ($exit_status != 0) then
-        echo "==> $flowCart failed with status $exit_status ... giving up, check cntl.out"
+
+      # On final solve, meet the minimum iteration count (thanks GRA).
+      if ("$onbest" == '-best' ) then
+        if ($itf < $ws_it_min_final && FLOW == $fs ) then
+          echo "  Note: user requested $ws_it_min_final iterations on final mesh"
+          @ itf = $ws_it_min_final
+        endif
+      endif
+
+      aero_setFlowLinks.csh
+
+      # check failsafe and set appropriate flags
+      if ( FIRST_ORDER == $fs ) then
+        # build 1st order cntl file
+        awk '{if ("RK"==$1){print $1,"  ",$2,"  ",0}else{print $0}}' ../input.cntl > input.cntl
+        # no restart
+        set fc_restart
+        # set flowCart iters to adjointCart iters
+        @ itf = $it_ad
+        # restore mg_levs in case we did PMG
+        @ mg_levs = $mg_levs_hold
+        # undo pmg if pmg
+        if ( "$pmg" == '-pmg' ) then
+          unlink Mesh.mg.c3d
+          unlink Mesh.c3d.Info
+          if ( $mesh2d ) then
+            ln -s ../Mesh.mg.c3d Mesh.c3d
+          else
+            ln -s ../Mesh.mg.c3d Mesh.R.c3d
+          endif
+          cp ../Mesh.c3d.Info .
+          echo "$mgprep -n $mg_levs -verifyInput $verb" >> cart3d.out
+          $mgprep -n $mg_levs -verifyInput $verb >> cart3d.out
+          if ( $status != 0 ) then
+            echo "ERROR: $mgprep failed trying to make $mg_levs levs ... extremely rare"
+            goto ERROR
+          endif
+
+          if ( $mesh2d ) then
+            unlink Mesh.c3d
+          else
+            unlink Mesh.R.c3d
+          endif
+        endif
+      else if ( TM0 == $fs ) then
+        # restart from FLOW
+        ln -sf `ls -1tr ../FLOW/check.* | tail -1` Restart.file
+        @ tm = 0
+        @ itf /= 2
+        set fc_restart = '-restart'
+
+        set file = ( forces.dat history.dat moments.dat functional.dat input.cntl )
+        foreach f ( `grep -l "# Cart3D CLIC2 convergence monitor" ../FLOW/*.dat` $file )
+          if ( -e ../FLOW/$f ) then
+            cp ../FLOW/$f .
+          endif
+        end
+      else if ( PMG == $fs ) then
+        # try for deeper convergence with flowCart via pMG restart
+        unlink Mesh.mg.c3d
+        unlink Mesh.c3d.Info
+        if ( $mesh2d ) then
+          ln -s ../Mesh.mg.c3d Mesh.c3d
+        else
+          ln -s ../Mesh.mg.c3d Mesh.R.c3d
+        endif
+        cp ../Mesh.c3d.Info .
+
+        # rerun mgPrep to make a pmg level
+        if ( $mg_pmg_auto < 2 ) then
+          echo "WARNING: detected mg_pmg_auto < 2, resetting to 2"
+          set mg_pmg_auto = 2
+        endif
+        echo "$mgprep -n $mg_pmg_auto -verifyInput -pmg $verb" > cart3d.out
+        $mgprep -n $mg_pmg_auto -verifyInput -pmg $verb >> cart3d.out
+        if ( $status != 0 ) then
+          echo "ERROR: $mgprep failed trying to make pMG mesh ... extremely rare"
+          goto ERROR
+        endif
+
+        if ( $mesh2d ) then
+          unlink Mesh.c3d
+        else
+          unlink Mesh.R.c3d
+        endif
+
+        @ mg_levs = $mg_pmg_auto
+
+        ln -sf `ls -1tr ../FLOW/check.* | tail -1` Restart.file
+        @ tm = 0
+        @ itf /= 2
+        set fc_restart = '-restart'
+
+        set file = ( forces.dat history.dat moments.dat functional.dat input.cntl )
+        foreach f ( `grep -l "# Cart3D CLIC2 convergence monitor" ../FLOW/*.dat` $file )
+          if ( -e ../FLOW/$f ) then
+            cp ../FLOW/$f .
+          endif
+        end
+      else
+        cp ../input.cntl .
+      endif
+
+      # Clamp stats window to 90% of number of FC iters
+      if ( $avg_window > 1 ) then
+        set this_window = `echo $avg_window $itf | awk '{wmax = 0.9*$2; w= ($1 < wmax ? $1 : wmax); printf "%d",w }'`
+        if ($this_window < $avg_window) then
+          echo "WARNING: Reduced stats window to $this_window"
+        endif
+        set stats = "-stats $this_window"
+      else
+        set stats
+        set this_window = 1
+      endif
+
+      set flags = "-fine -T -clic $verb $binaryIO $y_is_spanwise $buffLim $subcell $blcc $stats"
+
+      # exit if not solving on the finest mesh
+      if ( $fs == FLOW ) then
+        if ( 1 == $exit_point ) then
+          echo '  Skipfinest enabled, FLOW directory ready for finest mesh:'
+          echo ' ' `pwd`
+          echo "$flowCart $flags -N $itf $mg_gs_fc $mg_levs -limiter $limiter -tm $tm -cfl $cfl $fmg $fc_restart" >! FLOWCART.txt
+          echo '  Exiting'
+          cd ../..
+          goto ALLDONE
+        else
+          echo "  Running $flowCart with $mg_levs of $mg_fc $fc_multigrid levs"
+        endif
+      else
+        echo "  Starting $fs failsafe mode"
+      endif
+
+      if ( ("$fc_restart" == '-restart') && (! -e Restart.file ) ) then
+        echo 'ERROR: Missing Restart.file'
+        cd ../..
+        goto ERROR
+      endif
+
+      ( $timer $flowCart $flags -N $itf $mg_gs_fc $mg_levs -limiter $limiter -tm $tm -cfl $cfl $fmg $fc_restart >> cart3d.out ) >&! $timeInfo
+      set exit_status = $status
+      echo '' >> cart3d.out
+
+      # if flowCart failed then try to trap the error and / or try again in
+      # robust mode or with a cold start and lower CFL
+      if ( 0 != $exit_status ) then
+        if ( 253 == $exit_status) then
+          echo 'ERROR: file parsing error in flowCart '
+          echo "       check flowCart output in $dirname ... exiting now"
+          cd ../..
+          goto ERROR
+        endif
+        # check for expiration notice in cart3d.out
+        grep 'Cannot execute -- ' cart3d.out >& /dev/null
+        if ( 0 == $status ) then
+          echo 'ERROR: flowCart expired'
+          grep 'ATTENTION:' cart3d.out
+          grep 'ERROR:' cart3d.out
+          cd ../..
+          goto ERROR
+        endif
+        if ( 0 == $mesh2d && $fs != FIRST_ORDER ) then
+          # check robust mode
+          set isRobust = `cat input.cntl | awk 'BEGIN{ n=0; ng=0; } { if ("RK"==$1) { n++; if ("1"==$3) {ng++;} } } END{ if (n==ng) { print 1 } else { print 0 } }'`
+          # try converging in robust mode if standard input file
+          if ( 0 == $isRobust ) then
+            echo "==> $flowCart failed with status $exit_status ... trying robust mode"
+            # cleanup failed run and initialize files
+            rm -f check.* checkDT.* loadsCC*.dat loadsTRI.dat *.plt *.trix *.triq >& /dev/null
+            set file = ( forces.dat history.dat moments.dat functional.dat )
+            foreach f ( `grep -l "# Cart3D CLIC2 convergence monitor" ../../$dirback/FLOW/*.dat` $file )
+              if ( -e ../../$dirback/FLOW/$f ) then
+                cp -f ../../$dirback/FLOW/$f . >& /dev/null
+              endif
+            end
+
+            # build robust-mode cntl file
+            mv input.cntl input.not_robust.cntl
+            awk '{if ("RK"==$1){print $1,"  ",$2,"  ",1}else{print $0}}' ../input.cntl > input.cntl
+            ( $timer $flowCart $flags -N $itf $mg_gs_fc $mg_levs -limiter $limiter -tm $tm -cfl $cfl $fmg $fc_restart >> cart3d.out ) >&! $timeInfo
+            set exit_status = $status
+            echo '' >> cart3d.out
+            # swap back so we do not always use robust in later cycles
+            mv input.cntl input.robust.cntl
+            mv input.not_robust.cntl input.cntl
+          endif
+        endif
+      endif # flowCart status
+
+      if ( 0 != $exit_status ) then
+        echo "==> $flowCart failed with status $exit_status ... trying with CFL $cflmin"
+        @ gs_it = 2 * $it_ad
+        if ( $mg_levs > 2 ) then
+          ( $timer $flowCart $flags -N $gs_it $mg_gs_fc 2 -limiter $limiter -tm $tm -cfl $cflmin -no_fmg >> cart3d.out ) >&! $timeInfo
+          set exit_status = $status
+        else
+          ( $timer $flowCart $flags -N $gs_it $mg_gs_fc $mg_levs -limiter $limiter -tm $tm -cfl $cflmin -no_fmg >> cart3d.out ) >&! $timeInfo
+          set exit_status = $status
+        endif
+      endif
+
+      if ( $exit_status != 0 ) then
+        echo "ERROR: $flowCart failed with status ${exit_status}, read cart3d.out in" `pwd`
+        if ( $dirname == adapt00 ) then
+          echo "   ... It is likely that this is a setup issue, check that CART3D and CART3D_ARCH"
+          echo "   ... are set and try running the case by hand in $dirname using the commands"
+          echo "   ... from cart3d.out"
+        else if ( "$buffLim" != '-buffLim' ) then
+          echo '   ... This could be a setup issue or the case may require using -buffLim'
+        endif
+        cd ../..
+        goto ERROR
+      endif
+
+      rm -f Restart.file >& /dev/null
+
+      # mark as done, save mg_levs in case we have to run first-order
+      echo $mg_levs > DONE
+
+      if ( $fs == FLOW ) then
+        set it_run = `tail -1 history.dat | awk '{if ("#" != $1) {print $1} else {print '$itf'}}'`
+        echo "  Done $it_run flowCart cycles"
+        if (-e cart3d.out) then
+          grep WARNING cart3d.out | grep -v "end of run" | grep -v "levels changed"
+        endif
+      endif
+    endif # end DONE branch: already done flowCart [Restart] or run flowCart
+
+    # back to adapt?? dir level
+    cd ..
+
+    # Run any external post-processing to obtain final outputs, e.g. via
+    # sBOOM. This needs to be done before running adjointCart because xsensit
+    # needs gradients of these outputs.
+    ls -d SBOOM_* >& /dev/null
+    if ( 0 == $status ) then
+      echo '  Processing sBOOM outputs'
+      # run all jobs in parallel
+      set nsb = `ls -d SBOOM_* | wc -l`
+      c3d_parallel_runner.pl -d SBOOM_ -c $run_root/aero_sboom -j $nsb -w 2
+      if ( $status ) then
+        echo 'ERROR: c3d_parallel_runner.pl failed'
         goto ERROR
       endif
     endif
-    if ( -o $timeInfo ) then
-      set flowCartTime = `grep -e "user " $timeInfo | awk '{printf "%d",$2 }'`
-      \rm -f $timeInfo
-    endif
 
-    set fun     = `tail -1 functional.dat | awk '{printf("%18.10e",$3)}'`
-    set fun_avg = `tail -$avg_window functional.dat | awk 'BEGIN{ n=0; avg=0.0;} { avg += $3; n++} END{ avg /= n; printf("%18.10e",avg)}'`
-    set nCells = `grep "nCells (total number of control volumes):" functional.dat | tail -1 | awk '{print $8}'`
-    echo "$x  $nCells   $fun   $fun_avg" >>! ../$fun_con
+    if ( $fs == FLOW ) then
+      # Improve the estimate of actual nCells [was nHexes from cubes/adapt]
+      if ( -e FLOW/functional.dat ) then
+        set nCells = `grep "nCells (total number of control volumes):" FLOW/functional.dat | tail -1 | awk '{printf("%d",$8)}'`
+      endif
 
-    if ( -e Restart.file ) then
-      \rm -f Restart.file
-    endif
+      if ( -l ../BEST ) then
+        unlink ../BEST
+      endif
+      ln -s $dirname ../BEST
 
-    # mark as done, save mg_levs in case we have to run first-order
-    echo $mg_levs > ADAPT_FLOW
-  endif # ADAPT_FLOW
+      # Try to find the actual averaging window used by flowCart
+      set actual_window = `grep "Tecplot stats file" FLOW/cart3d.out | tr '=)' ' ' | awk '{print $NF}'`
+      if ($status) then
+        set actual_window = $avg_window
+      else if ("" == "$actual_window") then
+        set actual_window = $avg_window
+      endif
 
-  # check flowCart cycles
-  if ( 1 == $use_warm_starts ) then
-    set it_fc = `tail -1 history.dat | awk '{if ("#" != $1) {print $1} else {print '$it_fc'}}'`
-  endif
-  echo "   Done $it_fc flowCart cycles" 
+      if ($?debug_verbose) then
+        echo "  aero_funCon.csh $x $actual_window"
+      endif
+      aero_funCon.csh $x $actual_window
 
-  if ( -l ../BEST ) then
-    unlink ../BEST
-  endif
-  ln -s $dirname ../BEST
+      # update results
+      if ( $x > 0 ) then
+        cd ..
+        aero_getResults.pl -fos $error_safety_factor -update
+        if ($status != 0) then
+          echo '       aero_getResults.pl failed, exiting'
+          goto ERROR
+        endif
+        cd $dirname
+      endif
 
-  # check max level of refinement in current mesh and make sure we do not
-  # exceed max allowed based on 21 bits
-  set maxRefLev   = `grep " # maxRef" Mesh.c3d.Info  | awk '{print $1}'`
-  set maxDiv      = `grep " # initial mesh divisions" Mesh.c3d.Info  | awk '{ if ( $1 < $2 ) { $1 = $2; } if ( $1 < $3 ) { $1 = $3; } print $1}'`
-  # this is eq. 3.5 on pg. 84 in VKI notes of Aftosmis
-  set maxRefAllow = `echo $maxDiv | awk '{maxRef21 = 20.999999312 - log($1-1)/log(2.); print int( maxRef21 ) }'`
-  if ( $maxRefLev == $maxRefAllow ) then
-    echo " WARNING: Maximum refinement level reached, see STOP file"
-    echo "Maximum refinement level reached - embedding this mesh would exceed 21 bits." >> ../STOP
-    echo "Switch to propagation (in apc array) on next to last cycle and continue." >> ../STOP
-  endif
+      if ( adapt00 == $dirname && ( ! -e ../Config.xml ) && ( -f FLOW/Config.xml ) ) then
+        # Config.xml was generated by flowCart, copy it up so others can use it
+        cp FLOW/Config.xml ../.
+      endif
 
-  # check exit criteria
-  if ( 0 == $adjoint_on_finest && ( $n_adapt_cycles == $x || 1 == $error_ok || -e ../STOP ) ) then
-    if ( $n_adapt_cycles == $x ) then
-      echo " Completed $n_adapt_cycles adaptation cycles, exiting"
-    endif
-    if ( -e ../STOP ) then
-      echo " STOP file detected, exiting"
-    endif
+      # check exit criterion
+      if ( 2 == $exit_point ) then
+        if ( $n_adapt_cycles == $x ) then
+          echo "  Completed $n_adapt_cycles adaptation cycles, exiting"
+        endif
+        if ( $maxRefLev == $maxRef21 ) then
+          echo "  Reached $maxRefLev levels of refinement, exiting"
+        endif
 
-    # top level dir
-    cd ../
-
-    # reset timers, except flowCart
-    set xsensitTime         = 0
-    set adjointCartTime     = 0
-    set embedTime           = 0
-    set adjointErrorEstTime = 0
-    set adaptTime           = 0
-    echo $x $flowCartTime $xsensitTime $adjointCartTime $embedTime $adjointErrorEstTime $adaptTime >> $time_file
-    
-    # exit while loop
-    break
-  endif
-
-  # adjust etol if using relative error
-  if ( 1 == $use_relative_etol ) then
-    # etol is set to fraction*functional
-    # before changing etol, check that error/etol has decreased by at least 20%            
-    set adjust_etol = 1
-    if ( $x > 2 ) then # skip first 3 cycles
-      set adjust_etol = `tail -2 ../results.dat | awk 'BEGIN{ n=0; } {ratio[n] = $7; n++;} END{if (ratio[1]*1.20 < ratio[0]) { print 1 } else { print 0}}'`
-    endif
-
-    #   ...check error/etol ratio and adjust cutoff if necessary
-    if ( 1 == $adjust_etol ) then  # allowed to adjust
-      # make sure etol is positive
-      set etol = `echo $fun_avg | awk '{if ( 0.0 > $1 ) {printf "%e", (-1.)*'$etol_fraction'*$0} else {printf "%e", '$etol_fraction'*$0} }'`
-      # also make sure etol is greater than cutoff value
-      echo $etol | awk '{if ( '$etol_cutoff' > $1 ) {printf("   NOTE: ETOL set to cutoff value: %10.3e\n", '$etol_cutoff')}}'
-      set etol = `echo $etol | awk '{if ( '$etol_cutoff' > $1 ) {printf "%e", '$etol_cutoff'} else {printf "%e", '$etol'} }'`
-    endif
-
-    #   ...check error/etol ratio and adjust cutoff if necessary
-    # if ( 1 == $adjust_etol ) then     # allowed to adjust
-    #    # make sure etol is positive
-    #    #                        ...using Cleve Moller's R(J+1) formula for relative tolerance
-    #    set etol = `echo $fun_avg | awk '{if ( 0.0 > $1 ) {printf "%e", (-1.)*'$etol_fraction'*($0-1.)} else {printf "%e", '$etol_fraction'*($0+1)} }'`
-    #    # also make sure etol is greater than cutoff value
-    # endif
-
-    if ( $x > 1 ) then # do not trust first cycle
-      # adjust cutoff if error/etol > 100
-      # find order of magnitude of error/etol and power of ten multiplier
-      set etol_mult = `tail -1 ../results.dat | awk '{ if ($7>100.) { printf("%d", 10^(int(log($7)/log(10.)) - 1)) } else { printf("%d", 1)} }'`
-      if ( $etol_mult > 1 ) then
-        # adjust etol_cutoff and etol
-        set etol_cutoff = `echo $etol_cutoff | awk '{ printf("%e", $1*'$etol_mult') }'`
-        set etol = $etol_cutoff
-        echo "   WARNING: Adjusted ETOL and ETOL_cutoff to $etol"
+        # top level dir
+        cd ..
+        # exit main while loop
+        goto ALLDONE
       endif
     endif
-  endif # use_relative_error
-  
-  # start of adjoint solution
-  if ( ! -e ADAPT_ADJ ) then
-    # cleanup in case this is a restart
-    if ( -d TM0 ) then
-      \rm -rf TM0
-    endif
-    if ( -d PMG ) then
-      \rm -rf PMG
-    endif
-    if ( -d FIRST_ORDER ) then
-      \rm -rf FIRST_ORDER
+
+    if ( -e ../STOP ) then
+      echo '  STOP file detected, exiting'
+      # top level dir
+      cd ..
+      goto ALLDONE
     endif
 
-    ln -sf `\ls -1tr check.* | tail -1` Flow.file
-    ln -sf `\ls -1tr checkDT.* | tail -1` DT.file
-
-    # re-initialize in case this is a restart
-    # we need mg_levs to rerun flowCart if adjoint fails
-    set mg_levs_saved = `cat ADAPT_FLOW | awk '{print $1}'`
-    set mg_levs       = $mg_levs_saved
+    @ i = 1
+    foreach dir ( $failsafe )
+      if ( $dir == $fs ) then
+        break
+      else
+        @ i ++
+      endif
+      if ( $i > $#adjoints ) then
+        echo 'ERROR: adjoints vs failsafe array mismatch'
+        goto ERROR
+      endif
+    end
+    if ( 0 == $adjoints[$i] ) then
+      # skipping adjoint solve
+      continue
+    endif
 
     # on coarse meshes run fewer multigrid levels for better convergence
     set ad_mg_levs
@@ -964,645 +1614,622 @@ while ( 1 )
     else
       set ad_mg_levs = $mg_ad
     endif
+
     # check that ad_mg_levs is not greater than what flowCart used
     # this can happen if mgPrep failed
     if ( $mg_levs > $ad_mg_levs ) then
       set mg_levs = $ad_mg_levs
     endif
-    echo "   Using $mg_levs of $mg_ad levels in adjointCart $ad_multigrid"
 
-    if ( ( 0 == $mesh2d && 0 == $adj_TM1 && 1 == $tm ) || ( 1 == $adj_first_order ) ) then
-      # go directly into TM=0 mode or first-order mode
-      set exit_status = 1
-    else
-      ( $timer $xsensit $verb -dQ -limiter $limiter -tm $tm $y_is_spanwise $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
+    # track status of adjoint solves for all outputs
+    @ adj_status = 0
+
+    # Loop over adjoint directories
+    ls -d AD_*_* >& /dev/null
+    if ( $status ) then
+      echo "ERROR: Missing adjoint directories"
+      echo "       Check functional specification for adaptation"
+      goto ERROR
+    endif
+    foreach adir ( AD_*_* )
+      if ( -e $adir/DONE ) then
+        echo "    Adjoint done in $adir"
+        continue
+      endif
+
+      cd $adir
+
+      if ( FLOW == $fs ) then
+        echo "  Running $adjointCart in $adir with $mg_levs of $mg_ad $ad_multigrid levs"
+      else
+        echo "  Running $adjointCart in $adir with $mg_levs of $mg_ad $ad_multigrid levs (<-${fs})"
+      endif
+
+      aero_setFlowLinks.csh
+
+      if ( $?fs_prev ) then
+        if ( ( -e historyADJ.dat || -e historyADJ.mg.dat ) && ( $fs != FLOW ) ) then
+          mkdir DNF_${fs_prev}
+          mv -f historyADJ*dat DNF_${fs_prev}/. >& /dev/null
+          mv -f TIME* DNF_${fs_prev}/.
+          mv -f cart3d.out DNF_${fs_prev}/. >& /dev/null
+        endif
+      endif
+
+      # link in flow solution and timestep
+      ln -sf `ls -1tr ../${fs}/check.* | tail -1` Flow.file
+      ln -sf `ls -1tr ../${fs}/checkDT.* | tail -1` DT.file
+
+      # bring input file from FLOW in case there was CL steering
+      cp -f ../FLOW/input.cntl .
+
+      # when using multiple functionals, cat in the correct functional section
+      # for this adjoint
+      if (-e ../../Functionals.xml ) then
+        aero_rmFun.pl
+        if ( ! -f no_design.cntl ) then
+          echo 'ERROR: cannot create adjoint input file'
+          cd ../..
+          goto ERROR
+        endif
+        cat no_design.cntl functional.cntl > input.cntl
+        rm -f no_design.cntl
+      endif
+
+      if ( $fs == FIRST_ORDER ) then
+        # create first-order input.cntl
+        mv -f input.cntl input.orig.cntl
+        awk '{if ("RK"==$1){print $1,"  ",$2,"  ",0}else{print $0}}' input.orig.cntl > input.cntl
+        unlink Mesh.mg.c3d   >& /dev/null
+        unlink Mesh.c3d.Info >& /dev/null
+        ln -s ../FIRST_ORDER/Mesh.mg.c3d
+        ln -s ../FIRST_ORDER/Mesh.c3d.Info
+      else if ( $fs == PMG ) then
+        unlink Mesh.mg.c3d   >& /dev/null
+        unlink Mesh.c3d.Info >& /dev/null
+        ln -s ../PMG/Mesh.mg.c3d
+        ln -s ../PMG/Mesh.c3d.Info
+      endif
+
+      # xsensit
+      set flags = "$verb -dQ $y_is_spanwise $buffLim $subcell $blcc"
+      ( $timer $xsensit $flags -limiter $limiter -tm $tm >> cart3d.out ) >&! $timeInfo
       set exit_status = $status
+      mv -f $timeInfo ${timeInfo}.xs >& /dev/null
       if ($exit_status != 0) then
         echo "==> $xsensit failed with status $exit_status"
+        grep ERROR cart3d.out | tail -1
+        echo "    Check cart3d.out in $adir for more clues"
         goto ERROR
       endif
-      if ( -o $timeInfo ) then
-        set xsensitTime = `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-        \rm -f $timeInfo
+
+      # option to adjust adjoint iters for gradient adjoints
+      @ ita = $it_ad
+      if ( $adir =~ AD_*G*_* ) then
+        @ ita += $delta_it_ad
       endif
-      
-      ( $timer $adjointCart $verb -his -N $it_ad $mg_gs_ad $mg_levs -T $binaryIO -limiter $limiter -tm $tm -cfl $cfl $y_is_spanwise $fmg $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
+
+      set flags = "$verb -fine -T $binaryIO $y_is_spanwise $fmg $buffLim $subcell $blcc"
+      ( $timer $adjointCart $flags -N $ita $mg_gs_ad $mg_levs -limiter $limiter -tm $tm -cfl $cfl >> cart3d.out ) >&! $timeInfo
       set exit_status = $status
-      if ( -o $timeInfo ) then
-        set adjointCartTime = `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-        \rm -f $timeInfo
-      endif
-
-      if ( $exit_status != 0 ) then
-        echo "==> $adjointCart failed with status $exit_status"
-      endif
-      
-      # check convergence of adjointCart via historyADJ.dat file   
-      if ( $exit_status == 0 ) then
-        adj_check_convergence.pl
-        set exit_status = $status
-        if ( $exit_status != 0 ) then
-          echo "==> $adjointCart convergence problems"
-        endif
-      endif
-
-      if ( ( $exit_status != 0 ) && ( 0 == $adj_first_order ) ) then
-        # if we are using more than one mg level, try grid sequencing
-        if ( $mg_levs > 1 && ( "$mg_gs_ad" == '-mg' ) && ( "$fmg" != '-no_fmg' ) ) then
-          echo "      Running adjointCart with grid sequencing in $dirname"
-          \mv -f historyADJ.dat historyADJ.mg.dat
-          \rm -f checkADJ.* >& /dev/null
-          set gs_it = 2 # double number of iters
-          @ gs_it *= $it_ad 
-          ( $timer $adjointCart $verb -his -N $gs_it -gs $mg_levs -T $binaryIO -limiter $limiter -tm $tm -cfl $cfl $y_is_spanwise $fmg $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
-          set exit_status = $status
-          if ( -o $timeInfo ) then
-            @ adjointCartTime += `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-            \rm -f $timeInfo
-          endif
-
-          # check convergence of adjointCart via historyADJ.dat file   
-          if ( $exit_status == 0 ) then
-            adj_check_convergence.pl
-            set exit_status = $status
-          endif
-        endif
-      endif
-    endif # end if adj_TM1
-
-    # fail-safe strategies if adjoint convergence problems
-
-    # try to converge with tm=0
-    if ( ( $exit_status != 0 ) && ( 0 != $tm ) && ( 0 == $adj_first_order ) ) then
-      echo "      Running adjointCart with tm=0 in $dirname"
-      
-      mkdir TM0
-      cd TM0
-
-      ln -s ../input.c3d
-      ln -s ../input.cntl
-      ln -s ../Config.xml
-      ln -s ../Components.i.tri
-      ln -s ../Mesh.mg.c3d
-      ln -s ../Mesh.c3d.Info
-      cp ../*.dat .
-      \rm -f loads*.dat *ADJ*.dat >& /dev/null
-      ln -sf `\ls -1tr ../check.* | tail -1` Restart.file
-
-      # try for deeper convergence with flowCart via tm=0 restart
-      # use half of current warm start iterations
-      if ( 0 == $x ) then
-	@ it_tm = $it_fc + $it_fc / 2
-      else
-	@ it_tm = $it_fc + $ws_it[$x] / 2
-      endif
-      ( $timer $flowCart $verb -his -N $it_tm -T $binaryIO -clic $mg_gs_fc $mg_levs_saved -limiter $limiter -tm 0 -cfl $cfl $y_is_spanwise -restart $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
-      if ($status != 0) then
-	echo "==> $flowCart failed in tm=0 mode"
-	goto ERROR
-      endif
-      # check actual flowCart cycles
-      set it_tm = `tail -1 history.dat | awk '{if ("#" != $1) {print $1} else {print '$it_tm'}}'`
-      if ( -o $timeInfo ) then
-	@ flowCartTime += `grep -e "user " $timeInfo | awk '{printf "%d",$2 }'`
-	\rm -f $timeInfo
-      endif
-      
-      ln -sf `\ls -1tr check.* | tail -1` Flow.file
-      ln -sf `\ls -1tr checkDT.* | tail -1` DT.file
-
-      ( $timer $xsensit $verb -dQ -limiter $limiter -tm 0 $y_is_spanwise $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
-      if ($status != 0) then
-	echo "==> $xsensit failed"
-	goto ERROR
-      endif
-      if ( -o $timeInfo ) then
-	@ xsensitTime += `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-	\rm -f $timeInfo
-      endif
-      
-      ( $timer $adjointCart $verb -his -N $it_ad $mg_gs_ad $mg_levs -T $binaryIO -limiter $limiter -tm 0 -cfl $cfl $y_is_spanwise $fmg $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
-      set exit_status = $status
-      if ( -o $timeInfo ) then
-	@ adjointCartTime += `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-	\rm -f $timeInfo
+      if ( 0 != $exit_status ) then
+        echo "WARNING: $adjointCart failed with status $exit_status"
+        echo "         Check cart3d.out in $adir and ${adir}/DNF for more clues"
       endif
 
       # check convergence of adjointCart via historyADJ.dat file
-      if ( $exit_status == 0 ) then
-	adj_check_convergence.pl
-	set exit_status = $status
-      endif
-      \rm -f *.q Mesh.mg.c3d 
-      cd ../ # out of TM0 directory
-    endif # done TM0
-
-    # try to converge with pMG
-    if ( ( $exit_status != 0 ) && ( "$pmg" != '-pmg') && ( 0 == $adj_first_order ) ) then
-      echo "      Running adjointCart with pMG in ${dirname} on ${mg_pmg_auto} levels"
-
-      # force tm=0
-      @ tm_hold = $tm
-      set tm = 0
-      
-      mkdir PMG
-      cd PMG
-
-      ln -s ../input.c3d
-      ln -s ../input.cntl
-      ln -s ../Config.xml
-      ln -s ../Components.i.tri
-      if ( $mesh2d ) then
-        ln -s ../Mesh.mg.c3d Mesh.c3d
-      else
-        ln -s ../Mesh.mg.c3d Mesh.R.c3d
-      endif
-      ln -s ../Mesh.c3d.Info
-      cp ../*.dat .
-      \rm -f loads*.dat *ADJ*.dat >& /dev/null
-      ln -sf `\ls -1tr ../check.* | tail -1` Restart.file
-
-      if ( $mg_pmg_auto < 2 ) then
-        echo "WARNING: detected mg_pmg_auto < 2, resetting to 2"
-        set mg_pmg_auto = 2
-      endif
-      
-      $mgprep -n $mg_pmg_auto -verifyInput -pmg > cntl.out
-      set exit_status = $status
-      if ( $exit_status != 0 ) then
-        echo "==> $mgprep failed trying to make pMG mesh ... extremely rare"
-        goto ERROR
-      endif
-      
-      # try for deeper convergence with flowCart via pMG restart
-      # use half of current warm start iterations
-      if ( 0 == $x ) then
-        @ it_pmg = $it_fc + $it_fc / 2
-      else
-        @ it_pmg = $it_fc + $ws_it[$x] / 2
-      endif
-      ( $timer $flowCart $verb -his -N $it_pmg -T $binaryIO -clic -mg $mg_pmg_auto -limiter $limiter -tm $tm -cfl $cfl $y_is_spanwise -restart $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
-      if ($status != 0) then
-        echo "==> $flowCart failed in pMG mode"
-        goto ERROR
-      endif
-      # check actual flowCart cycles
-      set it_pmg = `tail -1 history.dat | awk '{if ("#" != $1) {print $1} else {print '$it_pmg'}}'`
-      if ( -o $timeInfo ) then
-        @ flowCartTime += `grep -e "user " $timeInfo | awk '{printf "%d",$2 }'`
-        \rm -f $timeInfo
-      endif
-      
-      ln -sf `\ls -1tr check.* | tail -1` Flow.file
-      ln -sf `\ls -1tr checkDT.* | tail -1` DT.file
-
-      ( $timer $xsensit $verb -dQ -limiter $limiter -tm $tm $y_is_spanwise $blcc $buffLim $subcell >> cntl.out ) >&! $timeInfo
-      if ($status != 0) then
-        echo "==> $xsensit failed"
-        goto ERROR
-      endif
-      if ( -o $timeInfo ) then
-        @ xsensitTime += `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-        \rm -f $timeInfo
-      endif
-      
-      ( $timer $adjointCart $verb -his -N $it_ad -mg $mg_pmg_auto -T $binaryIO -limiter $limiter -tm $tm -cfl $cfl $y_is_spanwise $fmg $blcc $buffLim >> cntl.out ) >&! $timeInfo
-      set exit_status = $status
-      if ( -o $timeInfo ) then
-        @ adjointCartTime += `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-        \rm -f $timeInfo
-      endif
-
-      # check convergence of adjointCart via historyADJ.dat file   
-      if ( $exit_status == 0 ) then
+      if ( 0 == $exit_status ) then
         adj_check_convergence.pl
         set exit_status = $status
       endif
-      \rm -f *.q Mesh.mg.c3d 
-      cd ../ # out of PMG directory
-      @ tm = $tm_hold
-    endif # done pMG
 
-    # last resort: try first-order
-    if ( $exit_status != 0 ) then
-      echo "      Running adjointCart in first-order mode in $dirname"
-      
-      mkdir FIRST_ORDER
-      cd FIRST_ORDER
-
-      # build 1st order cntl file
-      awk '{if ("RK"==$1){print $1,"  ",$2,"  ",0}else{print $0}}' \
-	  ../input.cntl > input.cntl
-
-      ln -s ../input.c3d
-      ln -s ../Config.xml
-      ln -s ../Components.i.tri
-      ln -s ../Mesh.mg.c3d
-      ln -s ../Mesh.c3d.Info
-
-      # cold start with adjoint number of iterations
-      ( $timer $flowCart $verb -his -N $it_ad -T $binaryIO $mg_gs_fc $mg_levs_saved -cfl $cfl $y_is_spanwise $fmg $subcell > cntl.out ) >&! $timeInfo
-      if ($status != 0) then
-	echo "==> $flowCart failed in first-order mode"
-	goto ERROR
-      endif
-      if ( -o $timeInfo ) then
-	@ flowCartTime += `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-	\rm -f $timeInfo
+      # if we are using more than one mg level, try grid sequencing or no multigrid
+      if ( 0 != $exit_status ) then
+        if ( $mg_levs > 1 && ( "$mg_gs_ad" == '-mg' ) ) then
+          # double number of iters
+          @ gs_it = 2 * $ita
+          if ( "$fmg" != '-no_fmg' ) then
+            echo "    Switching to grid sequencing in $dirname"
+            mv -f historyADJ.dat historyADJ.mg.dat >& /dev/null
+            rm -f checkADJ.* Com*ADJ.* *.plt >& /dev/null
+            ( $timer $adjointCart $flags -N $gs_it -gs $mg_levs -limiter $limiter -tm $tm -cfl $cfl >> cart3d.out ) >&! $timeInfo
+            if ( 0 == $status ) then
+              adj_check_convergence.pl
+              set exit_status = $status
+            endif
+          else
+            # last attempt
+            if ( $fs == FIRST_ORDER ) then
+              echo "    Switching to no multigrid in $dirname"
+              mv -f historyADJ.dat historyADJ.mg.dat >& /dev/null
+              rm -f checkADJ.* Com*ADJ.* *.plt >& /dev/null
+              ( $timer $adjointCart $flags -N $gs_it -mg 1 -limiter $limiter -tm $tm -cfl $cfl >> cart3d.out ) >&! $timeInfo
+              if ( 0 == $status ) then
+                adj_check_convergence.pl
+                set exit_status = $status
+              endif
+            endif
+          endif
+        endif
       endif
 
-      # check actual flowCart cycles
-      set it_o1 = `tail -1 history.dat | awk '{if ("#" != $1) {print $1} else {print '$it_ad'}}'`
-      echo "       done $it_o1 flowCart cycles in first-order mode" 
-      ln -sf `\ls -1tr check.* | tail -1` Flow.file
-      ln -sf `\ls -1tr checkDT.* | tail -1` DT.file
-      ( $timer $xsensit $verb -dQ $y_is_spanwise >> cntl.out ) >&! $timeInfo
-      if ($status != 0) then
-	echo "==> $xsensit failed on O1 restart"
-	goto ERROR
-      endif
-      if ( -o $timeInfo ) then
-	@ xsensitTime += `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-	\rm -f $timeInfo
+      # track adjoint solve status for all functionals
+      @ adj_status = ( $adj_status | $exit_status )
+
+      # cleanup
+      rm -f *.q adj_surf.dat dJdQ_surf.dat >& /dev/null
+
+      if ( 0 == $exit_status ) then
+        touch DONE
+        rm -f functional.cntl
       endif
 
-      ( $timer $adjointCart $verb -his -N $it_ad $mg_gs_ad $mg_levs -T $binaryIO -cfl $cfl $fmg $y_is_spanwise $fmg $subcell >> cntl.out ) >&! $timeInfo
-      set exit_status = $status
-      if ( -o $timeInfo ) then
-	@ adjointCartTime += `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-	\rm -f $timeInfo
-      endif
+      cd ..
+    end # end foreach AD_*
 
-      if ($exit_status == 0) then
-	adj_check_convergence.pl
-	set exit_status = $status
-      endif
-
-      if ($exit_status != 0 && ( "$mg_gs_ad" == '-mg' )) then
-	echo "==> STILL Adjoint convergence problems: trying without multigrid"
-	( $timer $adjointCart $verb -his -N $it_ad -gs $mg_levs -T $binaryIO -cfl $cfl $fmg $y_is_spanwise $fmg $subcell >> cntl.out ) >&! $timeInfo
-	set exit_status = $status
-	if ( -o $timeInfo ) then
-	  @ adjointCartTime +=`grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-	  \rm -f $timeInfo
-	endif
-      endif
-
-      if ($exit_status != 0) then
-	echo "==> STILL Adjoint convergence problems: giving up"
-	\rm -f *.q
-	goto ERROR
-      else
-	echo "   adjointCart converged in first-order mode"
-      endif
-
-      \rm -f *.q
-      cd ../ # out of first-order directory
-    endif # end first-order
-
-    # end adjoint convergence problems
-    
-    \rm -f *.q >& /dev/null
-
-    # remove debug files 
-    if ( -e adj_surf.dat ) then
-      \rm -f adj_surf.dat
+    # If any adjoint was not successfully computed, move to the next failsafe
+    # and go back to the flow-solve stage.
+    if ( 0 == $adj_status ) then
+      break
     endif
-    if ( -e dJdQ_surf.dat ) then
-      \rm -f dJdQ_surf.dat
-    endif
-  endif # ADAPT_ADJ
-  touch ADAPT_ADJ
-  echo "   Done adjointCart"
-  
-  cd ../ # out of adapt??, back to top level directory
 
-  if ( 1 == $adjoint_on_finest && 0 == $error_on_finest && $n_adapt_cycles == $x ) then
-    echo "   Done user-requested flow and adjoint solution on finest mesh, exiting"
-    # record user times
-    echo $x $flowCartTime $xsensitTime $adjointCartTime $embedTime $adjointErrorEstTime $adaptTime >> $time_file
+    set fs_prev = $fs
+  end # foreach failsafe
+
+  # out of adapt??, back to top level directory
+  cd ..
+
+  # done adjoints
+
+  # cleanup input file, the important one is in FLOW
+  rm -f $dirname/input.cntl >& /dev/null
+
+  if ( 0 != $adj_status ) then
+    echo 'ERROR: Adjoint convergence problems, giving up'
+    goto ERROR
+  endif
+
+  echo '  Done adjoint(s)'
+
+  # clear restart flag if cold starting every adaptation
+  if ( 0 == $use_warm_starts ) then
+    set fc_restart
+  endif
+
+  if ( 3 == $exit_point ) then
+    echo "  Done user-requested flow and adjoint solution on finest mesh, exiting"
     break
   endif
-  
-  # create embedded mesh and get error estimates
+
   cd EMBED
-  echo "   ... in directory EMBED"
-  
-  cp ../$dirname/Mesh.c3d.Info .
-  ln -sf `\ls -1tr ../$dirname/check.* | tail -1` preAdapt.ckpt
-  # used to ln -s but now cp input file in case we have Steering_Info
-  \cp -f ../$dirname/input.cntl . 
-    
+  echo '  Working in EMBED'
+
+  cp -f ../$dirname/Mesh.c3d.Info .
+
   ( $timer adapt -v -RallCells -seq -i ../$dirname/Mesh.mg.c3d $is2D -no_ckpt $sfc > adapt.${xx}.out ) >&! $timeInfo
   if ($status != 0) then
     echo "==> ADAPT failed"
     goto ERROR
   endif
-  if ( -o $timeInfo ) then
-    set embedTime = `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-    \rm -f $timeInfo
-  endif
-  echo "         Created embedded mesh"
 
-  ln -sf `\ls -1tr ../$dirname/check.* | tail -1` Flow.file
+  echo '    Generated embedded mesh'
 
-  # check if we needed first-order adjoints, if so use them
-  if ( -d ../$dirname/FIRST_ORDER ) then
-    echo "         Using first-order adjoint solution"
-    ln -sf `\ls -1tr ../$dirname/FIRST_ORDER/checkADJ.* | tail -1` Adjoint.file
-  else if ( -d ../$dirname/PMG ) then
-    ln -sf `\ls -1tr ../$dirname/PMG/checkADJ.* | tail -1` Adjoint.file
-  else if ( -d ../$dirname/TM0 ) then
-    ln -sf `\ls -1tr ../$dirname/TM0/checkADJ.* | tail -1` Adjoint.file
-  else
-    ln -sf `\ls -1tr ../$dirname/checkADJ.* | tail -1` Adjoint.file
-  endif
-  
-  ln -s adaptedMesh.R.c3d Mesh.mg.c3d
+  # catch name of functional driving adaptation
+  set adapt_dir = 0
 
-  echo "            Computing adjoint refinement parameter"
-  @ tm_hold = $tm
-  if ( 0 == $mesh2d && 1 == $tm && 0 == $err_TM1 ) then
-    set tm = 0
-    echo "            ... using tm=0 mode"
-  else if ( 0 == $mesh2d && 1 == $tm && 1 == $err_TM1 ) then
-    set tm = 1
-    echo "            ... using tm=1 mode"
-  endif
-  ( $timer $adjointErrorEst $verb -etol $etol -limiter $limiter -tm $tm $binaryIO $y_is_spanwise $blcc $buffLim $subcell > adjointErrorEst.${xx}.out ) >&! $timeInfo
-  set exit_status = $status
-  if ( -o $timeInfo ) then
-    set adjointErrorEstTime = `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-    \rm -f $timeInfo
-  endif
-  if ($exit_status != 0) then
-    if ( $ERROR_TOL_OK == $exit_status ) then
-      echo "            Adaptation tolerance satisfied"
-      if ( $x > 2 ) then
-        echo "            We will build final mesh, solve and exit"
-        set error_ok = 1
+  foreach adir ( ../$dirname/AD_A*_* ../$dirname/AD_E*_* )
+    if ( ! -d $adir ) then
+      continue
+    endif
+
+    set edir = $adir:t
+    set edir = `echo $edir | sed 's/^AD_//'`
+    if ( $edir =~ A*_* ) then
+      set edir = `echo $edir | sed 's/^A//'`
+      set adapt_dir = 1
+    endif
+    set edir = `echo $edir | sed 's/^E//'`
+    set edir = `echo $edir | sed 's/^G//'`
+    set edir = `echo $edir | sed 's/^_//'`
+    echo "    Estimating error in $edir"
+    set edir = Error_in_${edir}
+    if ( 1 == $adapt_dir ) then
+      set adapt_dir = $edir
+    endif
+
+    if (! -d $edir ) then
+      mkdir $edir
+    endif
+
+    cd $edir
+
+    ln -sf `ls -1tr ../../$dirname/FLOW/check.* | tail -1` Flow.file
+    ln -sf `ls -1tr ../${adir}/checkADJ.* | tail -1` Adjoint.file
+
+    aero_setFlowLinks.csh
+
+    ln -sf ../adaptedMesh.R.c3d Mesh.mg.c3d
+    ln -sf ../$adir/input.cntl
+
+    if ( -e ../$adir/COLUMNS ) then
+      ln -sf ../$adir/COLUMNS
+    endif
+
+    # Check for embedded value of functional in cases when it is computed
+    # externally. This is specific to loudness estimates computed by sBOOM,
+    # parsed from loud.dat. When adjointErrorEst executes, the value of the
+    # functional on the embedded mesh is set to the parsed value, instead of
+    # the line sensor integral.
+    ls ../$adir/dJdP_*dat >& /dev/null
+    if ( 0 == $status ) then
+      foreach obj_emb ( ../$adir/dJdP_*dat )
+        set lsname = $obj_emb:t
+        set lsname = `echo $lsname | sed 's/^dJdP_//'`
+        set lsname = `echo $lsname | sed 's/\.dat$//'`
+
+        rm -f OBJ_EXT_${lsname}.dat >& /dev/null
+
+        if ( -d ../../$dirname/SBOOM_EMBED_${lsname} ) then
+          if ( -e ../../$dirname/SBOOM_EMBED_${lsname}/loud.dat ) then
+            grep "Objective\ Function\ Value" ../../$dirname/SBOOM_EMBED_${lsname}/loud.dat | awk '{print $5}' > OBJ_EXT_${lsname}.dat
+          endif
+        endif
+      end
+    endif
+
+    if ( 0 == $mesh2d && 1 == $tm ) then
+      if ( 0 == $err_TM1 ) then
+        set tm = 0
       else
-        echo "            Ignoring tolerance for adapt cycle $x"
-      endif
-    else
-      echo "==> $adjointErrorEst failed with status = $exit_status"
-      echo "==> Trying it again"
-      sleep 1
-      ( $timer $adjointErrorEst $verb -etol $etol -limiter $limiter -tm $tm $binaryIO $y_is_spanwise $blcc $buffLim $subcell > adjointErrorEst.${xx}.out.2 ) >&! $timeInfo
-      set exit_status = $status
-      if ( -o $timeInfo ) then
-        set adjointErrorEstTime = `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-        \rm -f $timeInfo
-      endif
-      if ($exit_status != 0) then
-        echo "==> $adjointErrorEst failed again, status = $exit_status"
-        goto ERROR
+        set tm = 1
+        echo "            ... using tm=1 mode"
       endif
     endif
-  endif
-  @ tm = $tm_hold
-  
-  # cleanup
-  \rm -f cutPlanesADJ.plt 
-  unlink Mesh.mg.c3d
-  \rm -f adaptedMesh.R.c3d
-  \rm -f postAdapt.ckpt >& /dev/null
-  \rm -f aPlanes.dat >& /dev/null
 
-  # archive
-  mv errorEst.ADJ.dat errorEst.ADJ.${xx}.dat
-  if ( -e cutPlanesErrEst.dat ) then
-    mv cutPlanesErrEst.dat cutPlanesErrEst.${xx}.dat
-  endif
-  if ( -e cutPlanesErrEst.plt ) then
-    mv cutPlanesErrEst.plt cutPlanesErrEst.${xx}.plt
-  endif
+    set flags = "$verb $binaryIO $y_is_spanwise $buffLim $subcell $blcc $histo"
+    ( $timer $adjointErrorEst $flags -etol $etol -limiter $limiter -tm $tm > adjointErrorEst.${xx}.out ) >&! $timeInfo
+    set exit_status = $status
+    if ($exit_status != 0) then
+      if ( $ERROR_TOL_OK == $exit_status ) then
+        echo "            Adaptation tolerance satisfied"
+        if ( $x > 2 ) then
+          echo "            We will build final mesh, solve and exit"
+          @ error_ok = 1
+        else
+          echo "            Ignoring tolerance for adapt cycle $x"
+        endif
+      else
+        echo "==> $adjointErrorEst failed with status = $exit_status"
+        echo "==> Trying it again"
+        sleep 1
+        ( $timer $adjointErrorEst $flags -etol $etol -limiter $limiter -tm $tm > adjointErrorEst.${xx}.2.out ) >&! $timeInfo
+        set exit_status = $status
+        if ($exit_status != 0) then
+          echo "==> $adjointErrorEst failed again, status = $exit_status"
+          goto ERROR
+        endif
+      endif
+    endif
 
-  cd ../  # out of EMBED
+    unlink Mesh.mg.c3d
+
+    # archive
+    mv errorEst.ADJ.dat errorEst.ADJ.${xx}.dat
+    if ( -e cutPlanesErrEst.dat ) then
+      mv cutPlanesErrEst.dat cutPlanesErrEst.${xx}.dat
+    endif
+    if ( -e cutPlanesErrEst.plt ) then
+      mv cutPlanesErrEst.plt cutPlanesErrEst.${xx}.plt
+    endif
+
+    if ( -e error.allcells.dat ) then
+      mv error.allcells.dat error.allcells.${xx}.dat
+      mv error.cutcells.dat error.cutcells.${xx}.dat
+    endif
+
+    cd ..
+  end # loop over functionals
+
+  rm -f adaptedMesh.R.c3d aPlanes.dat >& /dev/null
+
+  # out of EMBED
+  cd ..
 
   # analyze results before adapting mesh
-  adj_get_results.pl
-
-  if ( -e STOP ) then
-    echo " ==> STOP file detected <=="
-    \rm -f ./EMBED/check.*
+  aero_getResults.pl -fos $error_safety_factor
+  if ($status != 0) then
+    echo '       aero_getResults.pl failed, exiting'
+    rm -f EMBED/Error_in_*/check.*
     goto ERROR
   endif
 
-  if ( 1 == $error_on_finest && $n_adapt_cycles == $x ) then
-    echo "   Done user-requested error analysis on finest mesh, exiting"
-    \rm -f ./EMBED/check.*
-    # record user times
-    echo $x $flowCartTime $xsensitTime $adjointCartTime $embedTime $adjointErrorEstTime $adaptTime >> $time_file
+  if ( 4 == $exit_point || $close_enough > 1 ) then
+    echo "Done user-requested error analysis on finest mesh, exiting"
+    rm -f EMBED/Error_in_*/check.*
     break
   endif
 
-  # check error/tol ratio and warn user if > 100
-  #if ( $x > 1 ) then
-  #    tail -1 results.dat | awk '{ if ($7 > 100.) { print "   NOTE: ERROR/ETOL ratio exceeds 100; you may like to set higher ETOL" } }'
-  #endif
-
-  # make a new mesh for next adaptation cycle 
-  @ x ++
-
-  echo "   ... in directory ADAPT"
+  echo '  Working in ADAPT'
   cd ADAPT
-  
-  ln -sf ../EMBED/check.* preAdapt.ckpt
+
+  if ( 0 == $adapt_dir ) then
+    echo 'ERROR: adaptation functional not set, exiting'
+    cd ..
+    goto ERROR
+  endif
+
+  ln -sf ../EMBED/${adapt_dir}/check.* preAdapt.ckpt
   cp ../$dirname/Mesh.c3d.Info .
-  # used to ln -s but now cp input file in case we have Steering_Info
-  \cp -f ../$dirname/input.cntl .
+  cp -f ../$dirname/FLOW/input.cntl .
 
   # check if this is the last mesh, if so, set nxref to final_mesh_xref
   # if requested by user
   set nxref = 0
-  if ( $n_adapt_cycles == $x || 1 == $error_ok ) then
+  if ( $n_adapt_cycles == $xp1 || 1 == $error_ok || $close_enough > 0 ) then
     if ( $final_mesh_xref > 0 ) then
       set nxref = $final_mesh_xref
     endif
   endif
 
-  # check if we are refining the mesh multiple times
-  # if so do sanity checks on how many times
   if ( $nxref > 0 ) then
-    set MAX_XREF = 3
-    if ( $nxref > $MAX_XREF ) then
-      echo "       User requested $nxref extra refinements on final mesh"
-      echo "       NOTE: $nxref exceeds max allowed of $MAX_XREF, resetting to $MAX_XREF"
-      @ nxref = $MAX_XREF
-    endif
-
     # check max level of refinement in current mesh and make sure we do not
-    # exceed max allowed based on 21 bits
-    set maxRefLev   = `grep " # maxRef" Mesh.c3d.Info  | awk '{print $1}'`
-    set maxDiv      = `grep " # initial mesh divisions" Mesh.c3d.Info  | awk '{ if ( $1 < $2 ) { $1 = $2; } if ( $1 < $3 ) { $1 = $3; } print $1}'`
-    # this is eq. 3.5 on pg. 84 in VKI notes of Aftosmis
-    set maxRefAllow = `echo $maxDiv | awk '{maxRef21 = 20.999999312 - log($1-1)/log(2.); print int( maxRef21 ) }'`
-    @ maxRefLev += $nxref
-    if ( $maxRefLev >= $maxRefAllow ) then
+    # exceed max allowed based on 21 bits or user-requested depth
+    @ newRefLev = $maxRefLev + $nxref
+    if ( $newRefLev >= $maxRef21 ) then
       echo "       User requested $nxref extra refinements on final mesh"
-      echo "       WARNING: requested refinement level exceeds 21 bits"
-      set maxRefLev = `grep " # maxRef" Mesh.c3d.Info  | awk '{print $1}'`
-      @ nxref = $maxRefAllow - $maxRefLev
-      if ( $nxref < 1 ) then
-        echo "       Extra refinement not possible, solving on final mesh"
-        set nxref = 0
-      else
-        echo "       Resetting extra refinements to $nxref"        
-      endif
+      echo "       WARNING: requested refinement level exceeds 21-bit maximum"
+      @ nxref = $maxRef21 - $maxRefLev
+    else if ( $newRefLev >= $max_ref_level ) then
+      echo "       User requested $nxref extra refinements on final mesh"
+      echo "       WARNING: requested refinement level exceeds user-specified maximum"
+      @ nxref = $max_ref_level - $maxRefLev
     endif
+    if ( $nxref < 1 ) then
+      echo "       Extra refinement not possible, solving on final mesh"
+      set nxref = 0
+    else
+      echo "       Resetting extra refinements to $nxref"
+    endif
+    unset newRefLev
   endif
-  
+
   set do_map
   set updir = '..'
   if ( $nxref > 0 ) then
     set do_map = '-prolongMap'
     set xrefdir = 'XREF_INIT'
-    mkdir -m 0700 -p $xrefdir
+    mkdir  $xrefdir
     cd $xrefdir
     set updir = '../..'
     ln -sf ../preAdapt.ckpt
     cp ../Mesh.c3d.Info .
     ln -sf ../input.cntl
+    if ( ( 1 == $use_preSpec ) && -e ../preSpec.c3d.cntl) then
+      ln -s ../preSpec.c3d.cntl
+    endif
     ln -sf ../Components.i.tri
   endif
-  
-  # logic to support interface propagation 
+
+  # Logic to support interface propagation
+
+  # Try to anticipate when the adaptation will breach the 21 bit limit. Check
+  # this only if the current cycle is 'a'.
+  if ( a == $apc[$xp1] ) then
+    @ newRefLev  = $maxRefLev + 1
+    # make sure this is not the final mesh
+    if ( $newRefLev == $maxRef21 && $n_adapt_cycles > $xp1 && 0 == $error_ok && 0 == $close_enough ) then
+      echo "    WARNING: Current refinement level $maxRefLev is one away from max (${maxRef21})"
+      echo '         ... Embedding this mesh would exceed 21 bits on the next cycle'
+      echo '         ... Inserting propagate cycle into the apc array'
+      set apc[$xp1] = p
+      @ xp1 += 1
+      set apc[$xp1] = a
+      @ xp1 -= 1
+      echo '            ' $apc
+    else if ( $maxRefLev == $max_ref_level && $max_ref_level < 21 ) then
+      # If user has specified a max ref limit, then proceed with propagate
+      # cycles
+      echo "    WARNING: Current refinement level $maxRefLev equals user-requested level (${max_ref_level})"
+      echo '         ... Inserting propagate cycle into the apc array'
+      set apc[$xp1] = p
+      @ xp1 += 1
+      set apc[$xp1] = a
+      @ xp1 -= 1
+      echo '            ' $apc
+    endif
+  endif
+
   set maxRef
-  if ( $apc[$x] == p ) then 
-    echo "         - interface propagation"
+  if ( p == $apc[$xp1] ) then
+    echo "    Interface propagation"
     # adapt automatically adjusts maxRef to mesh max and holds it there
     set maxRef = "-maxRef 1"
   endif
 
-  # set threshold value
-  set athUse
-  set growth
-  set fg_tmp
-  set check_final = 0
-  set auto_ath = `echo $mesh_growth[1] | awk '{printf("%d",$1)}'`
-  
-  if ( $auto_ath ) then
-    # check if we exceed max_nCells
-    set finalMesh = `echo $mesh_growth[$x] | awk '{printf("%d",$0*'$nCells')}'`
-    if ( $finalMesh > $max_nCells ) then
-      set fg_tmp = `echo $max_nCells | awk '{printf("%4.2f",0.98*$0/'$nCells')}'`
-      set growth = "-growth $fg_tmp"
-      echo "       Requested mesh growth $fg_tmp (adjusted below max_nCells)"
-      set check_final = 1
-      # use p-cycle here to get as close as possible to max_nCells
-      # without overshooting. a-cycles tag all split-cells so it may not
-      # be possible to stay below max_nCells. also, it gives smoother
-      # final meshes
-      echo "       Forcing interface propagation to reach max_nCells"
-      set maxRef = "-maxRef 1"
+  # Set adaptation threshold value
+
+  set acrit
+  if ( $?mesh_growth ) then
+    # convert to int so "if" does not gripe
+    if ( `echo $mesh_growth[$xp1] | awk '{printf("%d",$1)}'` ) then
+      # we are using explicit mesh_growth
+      set acrit = "-growth $mesh_growth[$xp1]"
+      echo "    Requested mesh growth $mesh_growth[$xp1]"
+      # signal explicit mesh growth
+      set emg
     else
-      set growth = "-growth ${mesh_growth[$x]}"
-      echo "       Requested mesh growth ${mesh_growth[$x]}"
+      # zero, so set automatically
+      set acrit = auto
     endif
-  else
-    # use user specified array
-    echo "         Adapting mesh: threshold = " $ath[$x]
-    
-    # check if threshold exceeds $max_nCells, if so increase ath and exit 
-    set checkTh = 1
-    set nloop = 0 # safety counter
-    while ( $checkTh )
-      adapt -adjoint -i ${updir}/$dirname/Mesh.mg.c3d -v -t $ath[$x] -b $buf $maxRef $is2D $prespec $y_is_spanwise $sfc -stats > adapt.stats
-      if ($status != 0) then
-        echo "==> ADAPT failed while running in STATS mode"
-        break
-      endif
-      @ nloop ++
-      set nCVs = `grep " nCVs = " adapt.stats | awk '{printf "%d", $4 }'`
-      set tagged = `grep " tagged hexes" adapt.stats | awk '{printf "%d", $3 }'`
-      if ( $mesh2d ) then
-        @ nCells = $nCVs + ( 3 * $tagged )
-      else
-        @ nCells = $nCVs + ( 7 * $tagged )
-      endif
-      if ( $nCells > $max_nCells ) then
-        @ ath[$x] *= 2
-      else
-        set checkTh = 0
-      endif
-      # safety check against infinite loops
-      if ( $nloop > 5 ) then 
-        echo "NOTE: Cannot find appropriate threshold - nCells is reasonably close to max_nCells"
-        set checkTh = 0
-      endif
-    end # while
-    if ( $nloop > 1 ) then
-      echo "         - adjusted threshold to $ath[$x] due to max_nCells"
-      echo "Adjusted threshold to stay below $max_nCells cells" > ${updir}/STOP
+  endif
+  if ( $?ath ) then
+    if ( `echo $ath[$xp1] | awk '{printf("%d",$1)}'` ) then
+      # we are using explicit threshold
+      set acrit = "-t $ath[$xp1]"
+      echo "    Requested threshold $ath[$xp1]"
+    else
+      # zero, so set automatically
+      set acrit = auto
     endif
-    \rm -f adapt.stats >& /dev/null
-    set athUse = "-t $ath[$x]"
-  endif # auto
-  
+  endif
+
+  if ( 1 == $auto_growth || auto == "$acrit" ) then
+    # specify threshold to be the mean error per cell
+    set this_ath = `grep "remaining_error_in_functional" $updir/EMBED/${adapt_dir}/errorEst.ADJ.${xx}.dat | awk '{printf("%12.4e",$2 / '$etol')}'`
+
+    # if this is the last mesh or if propagation, shift mean one bin to the left to force a larger growth
+    if ( $xp1 == $n_adapt_cycles || p == $apc[$xp1] || 1 == $error_ok || 1 == $close_enough ) then
+      set this_ath = `grep "remaining_error_in_functional" $updir/EMBED/${adapt_dir}/errorEst.ADJ.${xx}.dat | awk '{printf("%12.4e",(2^(log($2)/log(2)-1))/'$etol')}'`
+    endif
+
+    # Prohibit thresholds less than 1
+    set this_ath = `echo $this_ath | awk '{if ($1 > 1.0) {print $1} else {print 1.0}}'`
+
+    set acrit = "-t $this_ath"
+    echo "    Setting adaptation threshold to $this_ath"
+  endif
+
+  set flags = "$is2D $prespec $y_is_spanwise $sfc"
+
+  # check if we exceed or are close to max_cells2embed
+  # also check if we have at least the minimum mesh growth
+  if ( 0 == $close_enough ) then
+    # Note: The verbose flag MUST be passed, to allow the following grep
+    # to find the number of CV's.
+    adapt -adjoint -i ${updir}/$dirname/Mesh.mg.c3d -v $acrit -b $buf $maxRef $flags -stats > adapt.stats
+    if ($status != 0) then
+      echo "==> ADAPT failed while running in STATS mode"
+      break
+    endif
+    set nCVs = `grep " nCVs = " adapt.stats | tail -1 | awk '{printf "%d", $4 }'`
+    set tagged = `grep " tagged hexes" adapt.stats | tail -1 | awk '{printf "%d", $3 }'`
+
+    rm -f adapt.stats >& /dev/null
+
+    if ( $mesh2d ) then
+      @ finalMesh = $nCVs + ( 3 * $tagged )
+    else
+      @ finalMesh = $nCVs + ( 7 * $tagged )
+    endif
+
+    if ( $xp1 != $n_adapt_cycles && $finalMesh > $max_cells2embed ) then
+      # check if we exceed max_cells2embed
+      set acrit = `echo $max_cells2embed | awk '{printf("%4.2f",0.999*$1/'$nCells')}'`
+      echo "    Adjusted mesh growth to $acrit to stay below max_cells2embed"
+      set acrit = "-growth $acrit"
+      @ close_enough = 1
+    else if ( `echo $finalMesh | awk '{ if ( '$min_growth' > $1/'$nCells' ) {print 1} else {print 0}}'` ) then
+      # enforce minimum growth
+      if ( $?emg ) then
+        if ( `echo $mesh_growth[$xp1] | awk '{ if ( $1 < '$min_growth' ) {print 1} else {print 0}}'` ) then
+          # if using explicit mesh growth, adjust the growth only if it is
+          # actually less than the minimum growth
+          set acrit = "-growth $min_growth"
+        endif
+        unset emg
+      else
+        echo "    Mesh growth too small ( ${finalMesh} cells )"
+        echo "    Forcing growth of $min_growth"
+        set acrit = "-growth $min_growth"
+      endif
+    endif
+  else if ( 1 == $close_enough ) then
+    # trigger final flow solve
+    @ close_enough += 1
+  endif
+
   # refine mesh
+
   if ( 0 == $refine_all_cells ) then
-    ( $timer adapt -adjoint -i ${updir}/$dirname/Mesh.mg.c3d -v $athUse -b $buf $maxRef $growth $is2D $prespec $y_is_spanwise $do_map $sfc > adapt.${xx}.out ) >&! $timeInfo
+    ( $timer adapt -adjoint -i ${updir}/$dirname/Mesh.mg.c3d -v $acrit -b $buf $maxRef $flags $do_map > adapt.${xx}.out ) >&! $timeInfo
     set exit_status = $status
   else
-    ( $timer adapt -RallCells -i ${updir}/$dirname/Mesh.mg.c3d -v $is2D $prespec $y_is_spanwise $sfc > adapt.${xx}.out ) >&! $timeInfo
+    ( $timer adapt -RallCells -i ${updir}/$dirname/Mesh.mg.c3d -v $flags > adapt.${xx}.out ) >&! $timeInfo
     set exit_status = $status
   endif
-  if ( -o $timeInfo ) then
-    set adaptTime = `grep -e "user " $timeInfo | awk '{printf "%d", $2 }'`
-    \rm -f $timeInfo
-  endif
+
   if ($exit_status != 0) then
     if ( $ZERO_TAGGED_HEXES == $exit_status ) then
-      echo "      Zero cells were tagged in ADAPT"
-      cp -f ${updir}/$dirname/Mesh.mg.c3d adaptedMesh.R.c3d
-      cp -f ${updir}/$dirname/Mesh.c3d.Info .
-      cp -f preAdapt.ckpt postAdapt.ckpt
+      echo "    Zero cells were tagged, see ADAPT/adapt.${xx}.out"
+      echo "    Try decreasing etol, increasing mesh growth or switching to 'a' cycles"
+      rm -f aPlanes.dat postAdapt.ckpt >& /dev/null
     else
-      echo "==> ADAPT failed: status = $exit_status"
-      goto ERROR
+      echo "ERROR: ADAPT failed with status = $exit_status"
     endif
+    # out of ADAPT, back in top level dir
+    cd ..
+    # cleanup, embedded checkpoints are big
+    # comment next line if you need to debug
+    rm -f EMBED/Error_in_*/check.* >& /dev/null
+    goto ERROR
   endif
-  
-  if ( $ZERO_TAGGED_HEXES != $exit_status ) then
-    set nCells = `grep "totNumHexes     =" adapt.${xx}.out | awk '{print $3}'`
-  endif
-  if ( $nCells > $max_nCells ) then
-    echo " ==> Number of cells $nCells exceeds user defined limit $max_nCells ... EXITING"
-    \rm -f adaptedMesh.R.c3d postAdapt.ckpt ${updir}/EMBED/check.*
-    break
-  endif
+
+  set nCells = `grep "totNumHexes     =" adapt.${xx}.out | awk '{print $3}'`
 
   # check actual mesh growth and threshold
-  if ( $auto_ath ) then
-    if ( 0 == $refine_all_cells ) then
+  if ( 0 == $refine_all_cells ) then
+    if ( "$acrit" =~ "-growth*" ) then
       set actual_growth = `grep "Mesh growth factor" adapt.${xx}.out | tail -1 | awk '{print $7}'`
       set threshold     = `grep "Mesh growth factor" adapt.${xx}.out | tail -1 | awk '{print $13}'`
-      echo "       Actual mesh growth $actual_growth with threshold $threshold"
+      echo "    Actual mesh growth $actual_growth with threshold $threshold"
     else
-      echo "       Refined all cells, mesh growth is 8"
+      set init_hex  = `grep "| Initial number of   hex cells  is:" adapt.${xx}.out | awk '{print $8}'`
+      set final_hex = `grep "| Final   number of   hex cells  is:" adapt.${xx}.out | awk '{print $8}'`
+      set actual_growth = `echo $init_hex | awk '{print '$final_hex' / $1 }'`
+      echo "    Mesh growth $actual_growth"
+    endif
+  else
+    echo "    Refined all cells"
+  endif
+
+  # safety fuse on number of cells
+  if ( $nCells > $max_nCells ) then
+    echo "    WARNING: Number of cells $nCells exceeds max limit $max_nCells"
+    echo "             Enabling skipfinest to setup the final flow solve directory"
+    @ skip_finest = 1
+  endif
+
+  if ( $close_enough ) then
+    # check if mesh size is close enough to max_cells2embed, if not reset
+    # close_enough to allow more adaptation cycles
+    if ( `echo $max_cells2embed | awk '{ if ( '$nCells' * '$min_growth' <= $1 ) {print 1} else {print 0}}'`  ) then
+      echo "   Small mesh growth, continuing adaptation"
+      @ close_enough -= 1
+    endif
+  else
+    # check if this new mesh will exceed max_cells2embed with minimum growth,
+    # if yes this must be the final adaptation cycle
+    if ( `echo $max_cells2embed | awk '{ if ( '$nCells' * '$min_growth' > $1 ) {print 1} else {print 0}}'` ) then
+      @ close_enough += 1
     endif
   endif
 
-  # check if final mesh size is close enough to max_nCells, if yes exit
-  set close_enough = 0
-  if ( $check_final ) then
-    set close_enough = `echo $actual_growth | awk '{ if ( 1.25*$1 > '$fg_tmp' ) {print 1} else {print 0}}'`
-  endif
-  if ( $close_enough ) then
-    echo "       Mesh contains close to max_nCells"
-    date >> ${updir}/STOP
-    echo "Reached final mesh size." >> ${updir}/STOP
+  # skip if this is the final cycle
+  if ( $xp1 != $n_adapt_cycles ) then
+    if ( 1 == $close_enough ) then
+      echo "    Mesh size is close to the embedding limit (reached ${nCells} of $max_cells2embed cells)"
+      echo "    Performing final adaptation cycle"
+    else if ( 2 == $close_enough && 0 == $skip_finest ) then
+      echo "    Mesh size exceeds the embedding limit (reached ${nCells} of $max_cells2embed cells)"
+      echo "    Performing final flow analysis"
+    endif
   endif
 
   # actually do extra refinements
   if ( $nxref > 0 ) then
     # return out of XREF_INIT
-    cd ../
-    echo "       ... $nxref extra refinement(s) of final mesh"
+    cd ..
+    echo "    Generating $nxref extra mesh refinement(s)"
     set cp_from = '../XREF_INIT'
     # initialize extra refinement passes
     set xa = 1
+
+    if ("$acrit" =~ "-growth*" ) then
+      set base_growth = $mesh_growth[$xp1]
+    else
+      set base_growth = $actual_growth
+    endif
+
     # main loop controlling extra refinement
     while ($xa <= $nxref)
       set xa_dir = XREF_${xa}
@@ -1610,179 +2237,121 @@ while ( 1 )
       cd $xa_dir
       ln -s ../input.cntl
       ln -s ../Components.i.tri
+      if ( ( 1 == $use_preSpec ) && -e ../preSpec.c3d.cntl) then
+        ln -s ../preSpec.c3d.cntl
+      endif
       cp ${cp_from}/Mesh.c3d.Info .
       set do_map
       if ( $xa < $nxref ) then
         set do_map = '-prolongMap'
         # set do_map = '-prolongMap -Zcut 1'
       endif
-      echo "           Working in ${xa_dir}"
-      if ( $auto_ath ) then
-        # attenuate growth by preset fraction, i.e. take the final growth,
-        # subtract 1, multiply by attenuation fraction, and add 1 back
-        set xref_growth = `echo $mesh_growth[$x] | awk '{printf("%.3f",($0-1.)*'$xref_fraction[$xa]'+1.)}'`
-        # safety fuse => minimum growth is 1.1
-        set xref_growth = `echo $xref_growth | awk '{ if ( 1.1 > $0 ) {print 1.1} else {print $0}}'`
-        set growth = "-growth $xref_growth"
-        echo "           Requested mesh growth $xref_growth"
-      endif
+      echo "      Working in ${xa_dir}"
+      # attenuate growth by preset fraction, i.e. take the final growth,
+      # subtract 1, multiply by attenuation fraction, and add 1 back
+      set xref_growth = `echo $base_growth | awk '{printf("%.3f",($0-1.)*'$xref_fraction[$xa]'+1.)}'`
+      # safety fuse => minimum growth
+      set xref_growth = `echo $xref_growth | awk '{ if ( '$min_growth' > $0 ) {print '$min_growth'} else {print $0}}'`
+      set acrit = "-growth $xref_growth"
+      echo "      Requested mesh growth $xref_growth"
       # refine mesh again
-      adapt -adjoint -i ${cp_from}/adaptedMesh.R.c3d -in ${cp_from}/postAdapt.ckpt -v $athUse -b $buf $growth $is2D $prespec $y_is_spanwise $do_map $sfc >& adapt.out 
+      ( $timer adapt -adjoint -i ${cp_from}/adaptedMesh.R.c3d -in ${cp_from}/postAdapt.ckpt -v $acrit -b $buf $flags $do_map >& adapt.out ) >&! $timeInfo
       set exit_status = $status
       if ($exit_status != 0) then
         if ( $ZERO_TAGGED_HEXES == $exit_status ) then
-          echo "      Zero cells were tagged in ADAPT"
-          cp -f ../../$dirname/Mesh.mg.c3d adaptedMesh.R.c3d
-          cp -f ../../$dirname/Mesh.c3d.Info .
-          cp -f preAdapt.ckpt postAdapt.ckpt
+          if ( $xa == 1 ) then
+            set nxref = 'INIT'
+          else
+            @ nxref = $xa - 1
+          endif
+          echo "      Zero cells were tagged in ADAPT, using mesh from directory XREF_${nxref}"
+          # back up to ADAPT
+          cd ..
+          # exit while loop
+          break
         else
-          echo "==> ADAPT failed: status = $exit_status"
+          echo "ERROR: ADAPT failed with status = $exit_status"
           goto ERROR
         endif
       endif
-      if ( $ZERO_TAGGED_HEXES != $exit_status ) then
-        set nCells = `grep "totNumHexes     =" adapt.out | awk '{print $3}'`
-      endif
+      set nCells = `grep "totNumHexes     =" adapt.out | awk '{print $3}'`
       # check actual mesh growth and threshold
-      if ( $auto_ath ) then
-        set actual_growth = `grep "Mesh growth factor" adapt.out | tail -1 | awk '{print $7}'`
-        set threshold     = `grep "Mesh growth factor" adapt.out | tail -1 | awk '{print $13}'`
-        echo "           Actual mesh growth ${actual_growth}, threshold ${threshold}, cells ${nCells}"
-      endif
+      set actual_growth = `grep "Mesh growth factor" adapt.out | tail -1 | awk '{print $7}'`
+      set threshold     = `grep "Mesh growth factor" adapt.out | tail -1 | awk '{print $13}'`
+      echo "      Actual mesh growth ${actual_growth}, threshold ${threshold}, cells ${nCells}"
       # check that max_nCells is not exceeded, if yes use largest mesh built so far
       if ( $nCells > $max_nCells ) then
-        echo "           ==> Number of cells $nCells exceeds user defined limit $max_nCells"
-        \rm -f adaptedMesh.R.c3d postAdapt.ckpt
+        echo "      WARNING: Number of cells $nCells exceeds max limit $max_nCells"
+        rm -f adaptedMesh.R.c3d postAdapt.ckpt
         # overwrite nxref so we can copy the best mesh to the working adapt dir
         if ( $xa == 1 ) then
           set nxref = 'INIT'
           set nCells = `grep "totNumHexes     =" ${cp_from}/adapt.${xx}.out | awk '{print $3}'`
         else
-          set nxref = $xa
+          @ nxref = $xa - 1
           set nCells = `grep "totNumHexes     =" ${cp_from}/adapt.out | awk '{print $3}'`
         endif
-        echo "           ... using mesh from directory XREF_${nxref}"
+        echo "               using mesh from directory XREF_${nxref}"
         # back up to ADAPT
         cd ..
         # exit while loop
         break
       endif
       # cleanup
-      \rm -f ${cp_from}/adaptedMesh.R.c3d ${cp_from}/postAdapt.ckpt ${cp_from}/Mesh.c3d.Info
+      rm -f ${cp_from}/adaptedMesh.R.c3d ${cp_from}/postAdapt.ckpt ${cp_from}/Mesh.c3d.Info
       set cp_from = "../${xa_dir}"
       cd ..
       @ xa ++
     end # end while
-    \mv -f XREF_${nxref}/adaptedMesh.R.c3d .
-    \mv -f XREF_${nxref}/Mesh.c3d.Info .
-    \mv -f XREF_${nxref}/postAdapt.ckpt .
+    mv -f XREF_${nxref}/adaptedMesh.R.c3d .
+    mv -f XREF_${nxref}/Mesh.c3d.Info .
+    mv -f XREF_${nxref}/postAdapt.ckpt .
   endif # end extra refinement
-  
+
   # cleanup files
-  \rm -f aPlanes.dat >& /dev/null
+  rm -f aPlanes.dat >& /dev/null
   if ( 1 != $use_warm_starts ) then
-    \rm -f postAdapt.ckpt
+    rm -f postAdapt.ckpt
   endif
 
   if (1 == $keep_error_maps) then      # ...keep the error-fortified ckpt files -MA
-      ls ../EMBED/check.* >& /dev/null #    verify existence before destroying anything
-      if ( 0 == $status ) then
-          \rm ../EMBED/Restart.*.file >& /dev/null
-          \mv  ../EMBED/check.*   ../EMBED/Restart.{$xx}.file
-      endif
-  else
-      \rm -f  ../EMBED/check.*
-  endif
-  
-  cd ../ # out of ADAPT, back in top level dir
-
-  # record user times
-  @ xm1 = $x - 1
-  echo $xm1 $flowCartTime $xsensitTime $adjointCartTime $embedTime $adjointErrorEstTime $adaptTime >> $time_file
-
-  # create next analysis directory and setup files
-  set previous = $dirname
-  if ( $x < 10 ) then
-    set dirname = adapt0${x}
-    set xx      = 0${x}
-  else
-    set dirname = adapt${x}
-    set xx      = ${x}
-  endif
-
-  mkdir -m 0700 -p $dirname
-  cd $dirname
-
-  echo "  "
-  echo " Working in directory" $dirname
-  ln -s ../input.c3d
-  # copy input.cntl to bring over any steering updates, e.g. TargetCL
-  if ( -e ../input.new.cntl ) then
-    echo " Switching to new input.cntl file"
-    \mv ../input.new.cntl input.cntl
-  else
-    cp ../$previous/input.cntl .
-  endif
-  ln -s ../Config.xml
-  ln -s ../Components.i.tri
-  if ( ( 1 == $use_preSpec ) && -e ../preSpec.c3d.cntl) then
-    ln -s ../preSpec.c3d.cntl
-  endif
-
-  if ( $mesh2d ) then
-    mv ../ADAPT/adaptedMesh.R.c3d Mesh.c3d
-  else
-    mv ../ADAPT/adaptedMesh.R.c3d Mesh.R.c3d
-  endif
-
-  mv ../ADAPT/Mesh.c3d.Info .
-  
-  if ( 1 == $use_warm_starts ) then
-    mv ../ADAPT/postAdapt.ckpt Restart.file
-    cp ../$previous/*.dat .
-    \rm -f loads*.dat *ADJ*.dat
-    if ( -e vortexInfo.dat ) then
-      \rm -f vortexInfo.dat
+    ls ../EMBED/${adapt_dir}/check.* >& /dev/null #    verify existence before destroying anything
+    if ( 0 == $status ) then
+      rm ../EMBED/${adapt_dir}/Restart.*.file >& /dev/null
+      mv ../EMBED/${adapt_dir}/check.* ../EMBED/${adapt_dir}/Restart.{$xx}.file
     endif
-    if ( -e earthBL.Info.dat ) then
-      \rm -f earthBL.Info.dat
-    endif
-    # increase cycles for warm starts
-    @ it_fc += $ws_it[$x]
   endif
 
-  # vortex farfield input file
-  if ( -e ../vortexInfo.dat ) then
-    ln -s ../vortexInfo.dat
+  # update maxRefLev
+  @ maxRefLev = `grep " # maxRef" Mesh.c3d.Info | awk '{print int( $1 )}'`
+
+  # out of ADAPT, back in top level dir
+  cd ..
+
+  # cleanup, embedded checkpoints are big
+  rm -f EMBED/Error_in_*/check.* >& /dev/null
+
+  # collect time info
+  if ( $timeInfo != '/dev/null' ) then
+    aero_timer.csh $x $dirname $timeInfo $timer
   endif
 
-  # earth bl input file
-  if ( -e ../earthBL.Info.dat ) then
-    ln -s ../earthBL.Info.dat
+end # end main while loop
+
+ALLDONE:
+
+  # sum user time
+  if ( $timeInfo != '/dev/null' ) then
+    aero_timer.csh $x $dirname $timeInfo sum
   endif
-  
-  echo " Mesh contains $nCells hexes"
 
-  # mark safe-to-restart point
-  echo "$x" >! ../ADAPT/ADAPT_RESTART
-  
-  # cleanup
-  \rm -f ../$previous/ADAPT_FLOW  ../$previous/ADAPT_ADJ >& /dev/null
-end # end while
+  # check for expiration notice in cart3d.out
+  if ( -e BEST/FLOW/cart3d.out ) then
+    grep ' until expiration' BEST/FLOW/cart3d.out
+  endif
 
-# time totals
-if ( -o $time_file ) then
-  echo "# Totals" >> $time_file
-  @ col = 2 # start at column 2 and go up to column 7
-  while ( $col < 8 )
-    # sum times in non-comment lines, append to end of file
-    awk '{if ( "#" != $1 ) { ( times += $'$col') } }; END { { if ('$col' == 2) { printf "# %s", times } else if  ('$col' == 7) { printf " %s\n", times } else { printf " %s", times } } }' $time_file >> $time_file
-    @ col ++
-  end 
-endif
-
-echo " Done aero.csh"
-exit 0
+  echo 'Done aero.csh'
+  exit 0
 
 ERROR:
   exit 1

@@ -78,7 +78,7 @@
         // Defer to a file for most things.
         "File": "missile.xml",
         // Declare forces and moments
-        "Force": [
+        "Components": [
             "cap",
             "body",
             "fins",
@@ -106,7 +106,12 @@
     // Database info
     "DataBook": {
         // List of data book components
-        "Components": ["missile_no_base", "missile_thrust"],
+        "Components": [
+            "fins",
+            "missile_no_base",
+            "missile_thrust",
+            "missile_total"
+        ],
         // Location of data book
         "Folder": "data/",
         // Parameters for collecting data
