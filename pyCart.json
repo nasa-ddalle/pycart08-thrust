@@ -136,7 +136,8 @@
             "Title": "Automated Cart3D Report with Thrust BCs",
             "Subtitle": "Example \\texttt{08\\_thrust}",
             "Restriction": "pyCart Example - Distribution Unlimited",
-            "Figures": ["CaseTables", "CasePlots", "CaseFlow"]
+            "Figures": ["CaseTables", "CasePlots", "CaseFlow"],
+            "Location": "case"
         },
         // Define the figures
         "Figures": {
@@ -214,7 +215,7 @@
             "L1": {
                 "Type": "PlotL1",
                 "FigWidth": 5.5,
-                "FigHeight": 6.0,
+                "FigHeight": 4.2,
                 "Width": 0.33,
                 "Caption": "$L_1$ Density Residual"
             },
@@ -251,7 +252,7 @@
                         "NContour": 2,
                         "Constraints": ["mach < 0.8"],
                         "ColorMap": {
-                            "0.0": "darkpurple",
+                            "0.0": "darkgreen",
                             "$mach": "white",
                             "1.0": ["cyan", "green"],
                             "4.0": "darkorange"
@@ -261,7 +262,8 @@
                         "NContour": 2,
                         "Constraints": ["mach >= 0.8", "mach <= 1.25"],
                         "ColorMap": {
-                            "0.0": "darkpurple",
+                            "0.0": "darkgreen",
+                            "0.5": "green",
                             "$mach": "white",
                             "4.0": "darkorange"
                         }
